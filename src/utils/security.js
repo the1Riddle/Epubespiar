@@ -26,7 +26,7 @@ export function validateFile(file, maxSize, allowedTypes) {
   // Browsers may report an empty MIME type for locally selected .epub files.
   // This is only a preliminary check; the ZIP and EPUB parser still validates content.
   return allowedTypes.includes(file.type) ||
-    (file.type === "" && /\\.epub$/i.test(file.name || ""));
+    (file.type === "" && /\.epub$/i.test(file.name || ""));
 }
 
 /**
