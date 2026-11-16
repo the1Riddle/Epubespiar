@@ -1,4 +1,5 @@
 import browser from "webextension-polyfill";
+import { canLoadLocalFileFromReader } from "./downloadPolicy.js";
 import { validateURL, secureStorageSet, secureStorageGet } from '../utils/security';
 
 // Rate limiting configuration
@@ -131,6 +132,9 @@ async function handlePotentialEpubDownload(downloadItem) {
     const isFileEpub = urlObj.protocol === 'file:' && isLikelyEpubUrl(downloadItem.url);
 
     if (isFileEpub) {
+      // Firefox extension pages cannot fetch file:// URLs (Bugzilla 2085199).
+      // Never cancel a local file when the reader cannot load it.
+      if (!canLoadLocalFileFromReader(browser.runtime.getURL('reader.html'))) return;
       processedDownloads.add(downloadItem.id);
       await browser.downloads.cancel(downloadItem.id);
       await browser.downloads.erase({ id: downloadItem.id });
@@ -177,6 +181,9 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
 
 browser.downloads.onChanged.addListener(async (delta) => {
   if (processedDownloads.has(delta.id)) {
+    if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') {
+      processedDownloads.delete(delta.id);
+    }
     return;
   }
 
@@ -199,6 +206,11 @@ browser.downloads.onChanged.addListener(async (delta) => {
   } catch (error) {
     console.error('Error handling download change:', error);
   }
+});
+
+// Clean up download IDs after the browser removes the item.
+browser.downloads.onErased.addListener((downloadId) => {
+  processedDownloads.delete(downloadId);
 });
 
 // Handle tab removal
@@ -256,13 +268,3 @@ browser.runtime.onMessage.addListener((message, sender) => {
   });
 });
 
-// use a safe way to get URL parameters
-function getFileParameter() {
-  try {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('file');
-  } catch (error) {
-    console.error('Error parsing URL parameters:', error);
-    return null;
-  }
-}
