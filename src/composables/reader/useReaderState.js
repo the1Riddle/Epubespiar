@@ -27,11 +27,13 @@ export function useReaderState() {
   const createdObjectUrls = new Set();
   const isBookLoaded = computed(() => chapters.value.length > 0);
 
-  const createTrackedObjectUrl = (blob) => {
-    const url = URL.createObjectURL(blob);
+  const registerObjectUrl = (url) => {
     createdObjectUrls.add(url);
     return url;
   };
+
+  const createTrackedObjectUrl = (blob) =>
+    registerObjectUrl(URL.createObjectURL(blob));
 
   const cleanupObjectUrls = () => {
     createdObjectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -71,6 +73,7 @@ export function useReaderState() {
     loadingProgress,
     isBookLoaded,
     createTrackedObjectUrl,
+    registerObjectUrl,
     cleanupObjectUrls,
     resetReaderState,
   };
