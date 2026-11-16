@@ -1,4 +1,5 @@
 import JSZip from "jszip";
+import { assertArchiveWithinLimits } from "./archiveLimits.js";
 import { parseAndProcessChapter } from "./processChapter.js";
 import { parseTableOfContents } from "./parseTableOfContents.js";
 import { resolvePath } from "./pathUtils.js";
@@ -15,6 +16,7 @@ const parseOpfPath = (containerXml) => {
 export async function parseEpubArchive(file, createTrackedObjectUrl) {
   const arrayBuffer = await file.arrayBuffer();
   const zip = await JSZip.loadAsync(arrayBuffer);
+  assertArchiveWithinLimits(zip);
 
   const containerContent = await zip
     .file("META-INF/container.xml")
