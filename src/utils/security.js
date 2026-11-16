@@ -21,10 +21,12 @@ export function sanitizeHTML(html) {
  * @returns {boolean} Whether the file is valid
  */
 export function validateFile(file, maxSize, allowedTypes) {
-  if (!file) return false;
+  if (!file || !Number.isFinite(file.size) || file.size <= 0) return false;
   if (file.size > maxSize) return false;
-  if (!allowedTypes.includes(file.type)) return false;
-  return true;
+  // Browsers may report an empty MIME type for locally selected .epub files.
+  // This is only a preliminary check; the ZIP and EPUB parser still validates content.
+  return allowedTypes.includes(file.type) ||
+    (file.type === "" && /\\.epub$/i.test(file.name || ""));
 }
 
 /**
