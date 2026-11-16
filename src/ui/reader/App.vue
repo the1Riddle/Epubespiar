@@ -114,7 +114,7 @@ export default {
       currentBookKey, isDragging, isLoadingBook,
       loadingTitle, loadingMessage, loadingSubtitle,
       showLoadingProgress, loadingProgress, isBookLoaded,
-      createTrackedObjectUrl, cleanupObjectUrls, resetReaderState
+      registerObjectUrl, cleanupObjectUrls, resetReaderState
     } = readerState;
 
     const currentChapterTitle = computed(() => {
@@ -163,7 +163,7 @@ export default {
       },
       addNotification,
       resetReaderState,
-      createTrackedObjectUrl,
+      registerObjectUrl,
       restoreReadingPosition: readingPosition.restoreReadingPosition
     });
 
