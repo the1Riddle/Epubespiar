@@ -4,6 +4,7 @@
 
 <script setup>
 import { onMounted, ref, watch } from 'vue';
+import DOMPurify from 'dompurify';
 import { useTheme } from '../../../composables/useTheme.js';
 import chapterStyles from '../styles/shadow-content.css?inline';
 
@@ -25,12 +26,36 @@ const renderShadowContent = () => {
     shadowRootRef = host.value.attachShadow({ mode: 'open' });
   }
 
-  const fullHtml = `<style>${chapterStyles}</style>${props.bookStyles || ''}<div class="chapter-content">${props.contentHtml || ''}</div>`;
-  const parsed = new DOMParser().parseFromString(fullHtml, 'text/html');
-  shadowRootRef.replaceChildren(
-    ...Array.from(parsed.head.childNodes),
-    ...Array.from(parsed.body.childNodes)
+  // EPUB markup is untrusted. Shadow DOM isolates styles, not script execution.
+  const safeContent = DOMPurify.sanitize(props.contentHtml || '', {
+    RETURN_DOM_FRAGMENT: true,
+    FORBID_TAGS: [
+      'script', 'iframe', 'object', 'embed', 'form', 'input',
+      'button', 'textarea', 'select', 'option', 'meta', 'base',
+      'link', 'frame', 'frameset', 'foreignObject'
+    ],
+    FORBID_ATTR: ['srcdoc', 'formaction']
+  });
+
+  // Only copy stylesheet text, never book-supplied HTML nodes.
+  // Extension CSP blocks remote CSS, image, font and media loading.
+  const bookCssDocument = new DOMParser().parseFromString(
+    props.bookStyles || '', 'text/html'
   );
+  const bookStyleNodes = Array.from(bookCssDocument.querySelectorAll('style'))
+    .map(node => {
+      const stylesheet = document.createElement('style');
+      stylesheet.textContent = node.textContent || '';
+      return stylesheet;
+    });
+
+  const defaultStyle = document.createElement('style');
+  defaultStyle.textContent = chapterStyles;
+  const content = document.createElement('div');
+  content.className = 'chapter-content';
+  content.appendChild(safeContent);
+
+  shadowRootRef.replaceChildren(defaultStyle, ...bookStyleNodes, content);
 };
 
 onMounted(renderShadowContent);
