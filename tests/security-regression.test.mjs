@@ -27,6 +27,7 @@ test("file URL handling respects Firefox principal restriction", () => {
 });
 test("EPUB files with missing MIME type are accepted but other extensions are not", () => {
   assert.equal(validateFile({name: "book.epub", type: "", size: 120}, 1_000, ["application/epub+zip"]), true);
+  assert.equal(validateFile({name: "book.epub", type: "application/octet-stream", size: 120}, 1_000, ["application/epub+zip"]), true);
   assert.equal(validateFile({name: "book.html", type: "", size: 120}, 1_000, ["application/epub+zip"]), false);
   assert.equal(validateFile({name: "book.epub", type: "", size: 2_000}, 1_000, ["application/epub+zip"]), false);
 });
