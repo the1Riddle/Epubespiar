@@ -67,6 +67,15 @@ const renderShadowContent = () => {
   }
 
   // EPUB markup is untrusted. Shadow DOM isolates styles, not script execution.
+  if (props.contentHtml?.includes('test-cover')) {
+    const probe = new DOMParser().parseFromString(props.contentHtml, 'text/html');
+    const imgs = Array.from(probe.querySelectorAll('img')).map(img => ({
+      id: img.id,
+      src: img.getAttribute('src'),
+      trusted: props.isTrustedObjectUrl(img.getAttribute('src'))
+    }));
+    console.debug('EPUB_ASSET_DIAGNOSTIC', JSON.stringify(imgs));
+  }
   const safeContent = sanitizeChapterHtml(
     props.contentHtml || '',
     props.isTrustedObjectUrl
