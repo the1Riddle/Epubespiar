@@ -101,7 +101,10 @@ def main():
                 errors = []
                 page.on("pageerror", lambda exc: errors.append(str(exc)))
                 image_diagnostics = []
-                page.on("console", lambda msg: image_diagnostics.append(msg.text) if 'EPUB_ASSET_DIAGNOSTIC' in msg.text else None)
+                page.on("console", lambda msg: image_diagnostics.append(f"{msg.type}: {msg.text}"))
+                page.on("requestfailed", lambda req: image_diagnostics.append(
+                    f"failed request: {req.url} ({req.failure})"
+                ))
                 page.goto(f"chrome-extension://{extension_id}/reader.html")
                 page.locator("input[type=file]").first.set_input_files(
                     str(book), timeout=15000
@@ -120,7 +123,11 @@ def main():
                   ['test-cover', 'test-illustration'].map(id => {
                     const image = el.shadowRoot.querySelector('#' + id);
                     return {id, src: image?.getAttribute('src'),
-                            loaded: !!image?.complete && image.naturalWidth > 0};
+                            loaded: !!image?.complete && image.naturalWidth > 0,
+                            complete: image?.complete,
+                            naturalWidth: image?.naturalWidth,
+                            naturalHeight: image?.naturalHeight,
+                            currentSrc: image?.currentSrc};
                   })""")
                 assert all(image['src'] and image['src'].startswith('blob:')
                            and image['loaded'] for image in images), (images, image_diagnostics)
