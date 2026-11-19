@@ -43,6 +43,5 @@ jobs:
           path: |
             epubespiar-chrome.zip
             epubespiar-firefox.zip
-      - name: Dependency vulnerability report
+      - name: Dependency vulnerability gate (high and critical)
         run: pnpm audit --audit-level high
-        continue-on-error: true
