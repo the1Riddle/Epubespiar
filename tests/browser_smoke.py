@@ -4,7 +4,6 @@ Runs on GitHub Actions with Playwright's extension-capable Chromium build.
 Never includes a malicious fixture outside the local throwaway browser profile.
 """
 from pathlib import Path
-import os
 import tempfile
 import zipfile
 import struct
@@ -20,9 +19,9 @@ def fixture_png():
         return (struct.pack(">I", len(payload)) + kind + payload
                 + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff))
 
-    signature = b"\\x89PNG\\r\\n\\x1a\\n"
+    signature = b"\x89PNG\r\n\x1a\n"
     header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
-    pixels = zlib.compress(b"\\x00\\xff\\x50\\x20")
+    pixels = zlib.compress(b"\x00\xff\x50\x20")
     return (signature + chunk(b"IHDR", header) + chunk(b"IDAT", pixels)
             + chunk(b"IEND", b""))
 
@@ -34,6 +33,7 @@ def write_epub(path: Path, malicious: bool = False):
   <body><h1>Reader security fixture</h1><p>Hello, Epubespiar.</p>
   <img id="test-cover" src="cover.png" alt="cover"/>
   <img id="test-illustration" src="images/illustration.png" alt="illustration"/>
+  <img id="untrusted-blob" src="blob:https://untrusted.example.invalid/1234"/>
   <img src="unavailable.png" onerror="window.__epubespiar_xss = true"/>
   <script>window.__epubespiar_xss = true</script>
   <a href="javascript:window.__epubespiar_xss = true">Click here</a>
@@ -98,29 +98,8 @@ def main():
                 assert worker.url.startswith("chrome-extension://")
 
                 page = context.new_page()
-                # Trace object URL ownership without changing the extension code.
-                page.add_init_script("""(() => {
-                  window.__epubAssetBlobs = new Map();
-                  window.__epubAssetRevoked = [];
-                  const create = URL.createObjectURL.bind(URL);
-                  const revoke = URL.revokeObjectURL.bind(URL);
-                  URL.createObjectURL = blob => {
-                    const url = create(blob);
-                    window.__epubAssetBlobs.set(url, blob);
-                    return url;
-                  };
-                  URL.revokeObjectURL = url => {
-                    window.__epubAssetRevoked.push(url);
-                    revoke(url);
-                  };
-                })();""")
                 errors = []
                 page.on("pageerror", lambda exc: errors.append(str(exc)))
-                image_diagnostics = []
-                page.on("console", lambda msg: image_diagnostics.append(f"{msg.type}: {msg.text}"))
-                page.on("requestfailed", lambda req: image_diagnostics.append(
-                    f"failed request: {req.url} ({req.failure})"
-                ))
                 page.goto(f"chrome-extension://{extension_id}/reader.html")
                 page.locator("input[type=file]").first.set_input_files(
                     str(book), timeout=15000
@@ -145,23 +124,12 @@ def main():
                             naturalHeight: image?.naturalHeight,
                             currentSrc: image?.currentSrc};
                   })""")
-                if not all(image['src'] and image['src'].startswith('blob:')
-                           and image['loaded'] for image in images):
-                    blobs = host.evaluate("""async (el) => {
-                      const list = [];
-                      for (const id of ['test-cover', 'test-illustration']) {
-                        const url = el.shadowRoot.querySelector('#' + id)?.getAttribute('src');
-                        const blob = window.__epubAssetBlobs?.get(url);
-                        const bytes = blob ? new Uint8Array(await blob.arrayBuffer()) : null;
-                        list.push({id, blobRecorded: !!blob,
-                          mime: blob?.type, size: blob?.size,
-                          firstBytes: bytes ? Array.from(bytes.slice(0, 20)) : null,
-                          revoked: window.__epubAssetRevoked?.includes(url),
-                          trackedBlobCount: window.__epubAssetBlobs?.size});
-                      }
-                      return list;
-                    }""")
-                    raise AssertionError((images, image_diagnostics, blobs))
+                assert all(image['src'] and image['src'].startswith('blob:')
+                           and image['loaded'] for image in images), images
+                untrusted = host.evaluate("""(el) =>
+                  el.shadowRoot.querySelector('#untrusted-blob')?.getAttribute('src')
+                """)
+                assert not untrusted, "Arbitrary EPUB-supplied blob URL survived sanitizer"
                 assert page.evaluate("window.__epubespiar_xss") is None, "EPUB executed script"
                 assert not errors, f"Reader JS errors: {errors}"
                 print("PASS: extension renders cover and chapter images; unsafe XHTML removed")
