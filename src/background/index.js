@@ -1,6 +1,6 @@
 import browser from "webextension-polyfill";
 import { canLoadLocalFileFromReader } from "./downloadPolicy.js";
-import { validateURL, secureStorageSet, secureStorageGet } from '../utils/security';
+
 
 // Rate limiting configuration
 const RATE_LIMIT = {
@@ -23,7 +23,7 @@ function generateInstanceId() {
 function isSafeSupportedUrl(url) {
   try {
     const urlObj = new URL(url);
-    return (urlObj.protocol === 'https:' || urlObj.protocol === 'file:' || urlObj.protocol === 'epub:') &&
+    return (urlObj.protocol === 'https:' || urlObj.protocol === 'file:') &&
            urlObj.pathname.length < 2048; // Prevent path traversal
   } catch {
     return false;
