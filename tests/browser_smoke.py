@@ -98,6 +98,22 @@ def main():
                 assert worker.url.startswith("chrome-extension://")
 
                 page = context.new_page()
+                # Trace object URL ownership without changing the extension code.
+                page.add_init_script("""(() => {
+                  window.__epubAssetBlobs = new Map();
+                  window.__epubAssetRevoked = [];
+                  const create = URL.createObjectURL.bind(URL);
+                  const revoke = URL.revokeObjectURL.bind(URL);
+                  URL.createObjectURL = blob => {
+                    const url = create(blob);
+                    window.__epubAssetBlobs.set(url, blob);
+                    return url;
+                  };
+                  URL.revokeObjectURL = url => {
+                    window.__epubAssetRevoked.push(url);
+                    revoke(url);
+                  };
+                })();""")
                 errors = []
                 page.on("pageerror", lambda exc: errors.append(str(exc)))
                 image_diagnostics = []
@@ -129,8 +145,23 @@ def main():
                             naturalHeight: image?.naturalHeight,
                             currentSrc: image?.currentSrc};
                   })""")
-                assert all(image['src'] and image['src'].startswith('blob:')
-                           and image['loaded'] for image in images), (images, image_diagnostics)
+                if not all(image['src'] and image['src'].startswith('blob:')
+                           and image['loaded'] for image in images):
+                    blobs = host.evaluate("""async (el) => {
+                      const list = [];
+                      for (const id of ['test-cover', 'test-illustration']) {
+                        const url = el.shadowRoot.querySelector('#' + id)?.getAttribute('src');
+                        const blob = window.__epubAssetBlobs?.get(url);
+                        const bytes = blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+                        list.push({id, blobRecorded: !!blob,
+                          mime: blob?.type, size: blob?.size,
+                          firstBytes: bytes ? Array.from(bytes.slice(0, 20)) : null,
+                          revoked: window.__epubAssetRevoked?.includes(url),
+                          trackedBlobCount: window.__epubAssetBlobs?.size});
+                      }
+                      return list;
+                    }""")
+                    raise AssertionError((images, image_diagnostics, blobs))
                 assert page.evaluate("window.__epubespiar_xss") is None, "EPUB executed script"
                 assert not errors, f"Reader JS errors: {errors}"
                 print("PASS: extension renders cover and chapter images; unsafe XHTML removed")
