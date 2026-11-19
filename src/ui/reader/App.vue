@@ -157,8 +157,7 @@ export default {
       onOpened: () => { bookshelfOpen.value = false; },
       persistReadingPosition: readingPosition.persistReadingPosition,
       refs: {
-        isTrustedObjectUrl,
-      isLoadingBook, loadingTitle, loadingMessage,
+        isLoadingBook, loadingTitle, loadingMessage,
         loadingSubtitle, showLoadingProgress, currentEpubUrl,
         currentBookKey, chapters, tableOfContents,
         currentChapter, spineItems
@@ -315,6 +314,7 @@ export default {
       settingsOpen, fontWeight, fontFamily, showInlineControls, currentChapterTitle,
       zoomLevel, fontSize, bookContent, tableOfContents,
       currentChapter, chapters, currentEpubUrl,
+      isTrustedObjectUrl,
       isLoadingBook, loadingTitle, loadingMessage,
       loadingSubtitle, showLoadingProgress,
       loadingProgress, isBookLoaded, toggleSidebar,
