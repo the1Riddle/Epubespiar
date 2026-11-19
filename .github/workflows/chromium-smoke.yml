@@ -1,0 +1,31 @@
+name: Chromium EPUB browser smoke test
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Install Playwright (CI-only)
+        run: |
+          python -m pip install --upgrade playwright
+          python -m playwright install --with-deps chromium
+      - name: Test packaged Chromium EPUB reader against hostile XHTML
+        run: python tests/browser_smoke.py
