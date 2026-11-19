@@ -7,9 +7,24 @@ from pathlib import Path
 import os
 import tempfile
 import zipfile
+import struct
+import zlib
 from playwright.sync_api import sync_playwright
 
 DIST = (Path(__file__).resolve().parents[1] / "dist" / "chrome").resolve()
+
+
+def fixture_png():
+    """Generate a standards-compliant one-pixel RGB PNG with no external dependencies."""
+    def chunk(kind, payload):
+        return (struct.pack(">I", len(payload)) + kind + payload
+                + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff))
+
+    signature = b"\\x89PNG\\r\\n\\x1a\\n"
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    pixels = zlib.compress(b"\\x00\\xff\\x50\\x20")
+    return (signature + chunk(b"IHDR", header) + chunk(b"IDAT", pixels)
+            + chunk(b"IEND", b""))
 
 
 def write_epub(path: Path, malicious: bool = False):
@@ -17,6 +32,8 @@ def write_epub(path: Path, malicious: bool = False):
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head><title>Safe Chapter</title></head>
   <body><h1>Reader security fixture</h1><p>Hello, Epubespiar.</p>
+  <img id="test-cover" src="cover.png" alt="cover"/>
+  <img id="test-illustration" src="images/illustration.png" alt="illustration"/>
   <img src="unavailable.png" onerror="window.__epubespiar_xss = true"/>
   <script>window.__epubespiar_xss = true</script>
   <a href="javascript:window.__epubespiar_xss = true">Click here</a>
@@ -52,6 +69,8 @@ def write_epub(path: Path, malicious: bool = False):
 </package>""",
         )
         archive.writestr("EPUB/chapter.xhtml", chapter)
+        archive.writestr("EPUB/cover.png", fixture_png())
+        archive.writestr("EPUB/images/illustration.png", fixture_png())
 
 
 def main():
@@ -92,10 +111,20 @@ def main():
                 assert "<script" not in content.lower(), "Script survived EPUB sanitization"
                 assert "onerror" not in content.lower(), "Event handler survived sanitization"
                 assert "javascript:" not in content.lower(), "Unsafe link survived sanitization"
+                # Generated blob: URLs must survive sanitization and load
+                # without permitting script/event handlers from the EPUB.
                 page.wait_for_timeout(700)
+                images = host.evaluate("""(el) =>
+                  ['test-cover', 'test-illustration'].map(id => {
+                    const image = el.shadowRoot.querySelector('#' + id);
+                    return {id, src: image?.getAttribute('src'),
+                            loaded: !!image?.complete && image.naturalWidth > 0};
+                  })""")
+                assert all(image['src'] and image['src'].startswith('blob:')
+                           and image['loaded'] for image in images), images
                 assert page.evaluate("window.__epubespiar_xss") is None, "EPUB executed script"
                 assert not errors, f"Reader JS errors: {errors}"
-                print("PASS: extension starts, EPUB loads, unsafe XHTML removed")
+                print("PASS: extension renders cover and chapter images; unsafe XHTML removed")
             finally:
                 context.close()
 
