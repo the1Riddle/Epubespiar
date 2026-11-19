@@ -65,6 +65,7 @@
         :fontWeight="fontWeight"
         :fontFamily="fontFamily"
         :chapters="chapters"
+        :is-trusted-object-url="isTrustedObjectUrl"
         @content-scroll="handleContentScroll"
         @navigate-internal="handleInternalNavigation"
       />
@@ -114,7 +115,7 @@ export default {
       currentBookKey, isDragging, isLoadingBook,
       loadingTitle, loadingMessage, loadingSubtitle,
       showLoadingProgress, loadingProgress, isBookLoaded,
-      registerObjectUrl, cleanupObjectUrls, resetReaderState
+      registerObjectUrl, isTrustedObjectUrl, cleanupObjectUrls, resetReaderState
     } = readerState;
 
     const currentChapterTitle = computed(() => {
@@ -156,7 +157,8 @@ export default {
       onOpened: () => { bookshelfOpen.value = false; },
       persistReadingPosition: readingPosition.persistReadingPosition,
       refs: {
-        isLoadingBook, loadingTitle, loadingMessage,
+        isTrustedObjectUrl,
+      isLoadingBook, loadingTitle, loadingMessage,
         loadingSubtitle, showLoadingProgress, currentEpubUrl,
         currentBookKey, chapters, tableOfContents,
         currentChapter, spineItems
