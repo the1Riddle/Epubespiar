@@ -35,6 +35,10 @@ export function useReaderState() {
   const createTrackedObjectUrl = (blob) =>
     registerObjectUrl(URL.createObjectURL(blob));
 
+  // Only object URLs created by our ZIP extractor can be kept by the
+  // EPUB HTML sanitizer. A string supplied by the book is never trusted.
+  const isTrustedObjectUrl = (url) => createdObjectUrls.has(url);
+
   const cleanupObjectUrls = () => {
     createdObjectUrls.forEach((url) => URL.revokeObjectURL(url));
     createdObjectUrls.clear();
@@ -74,6 +78,7 @@ export function useReaderState() {
     isBookLoaded,
     createTrackedObjectUrl,
     registerObjectUrl,
+    isTrustedObjectUrl,
     cleanupObjectUrls,
     resetReaderState,
   };
