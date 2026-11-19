@@ -100,6 +100,8 @@ def main():
                 page = context.new_page()
                 errors = []
                 page.on("pageerror", lambda exc: errors.append(str(exc)))
+                image_diagnostics = []
+                page.on("console", lambda msg: image_diagnostics.append(msg.text) if 'EPUB_ASSET_DIAGNOSTIC' in msg.text else None)
                 page.goto(f"chrome-extension://{extension_id}/reader.html")
                 page.locator("input[type=file]").first.set_input_files(
                     str(book), timeout=15000
@@ -121,7 +123,7 @@ def main():
                             loaded: !!image?.complete && image.naturalWidth > 0};
                   })""")
                 assert all(image['src'] and image['src'].startswith('blob:')
-                           and image['loaded'] for image in images), images
+                           and image['loaded'] for image in images), (images, image_diagnostics)
                 assert page.evaluate("window.__epubespiar_xss") is None, "EPUB executed script"
                 assert not errors, f"Reader JS errors: {errors}"
                 print("PASS: extension renders cover and chapter images; unsafe XHTML removed")
