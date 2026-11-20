@@ -4,6 +4,7 @@ import { assertArchiveWithinLimits, ARCHIVE_LIMITS } from "../src/services/epubP
 import { canLoadLocalFileFromReader } from "../src/background/downloadPolicy.js";
 import { validateFile } from "../src/utils/security.js";
 import { readLimitedBlob } from "../src/services/epubHttps/limitedResponse.js";
+import { resolveArchivePath } from "../src/services/epubProcesor/pathUtils.js";
 
 const fakeZip = (sizes) => ({
   files: Object.fromEntries(sizes.map((size, i) =>
@@ -42,4 +43,18 @@ test("remote response rejects streamed oversized payload", async () => {
 test("remote response accepts small payload", async () => {
   const blob = await readLimitedBlob(new Response("epub"), 100);
   assert.equal(await blob.text(), "epub");
+});
+
+test("EPUB archive assets support encoded filenames, fragments and query parameters", () => {
+  const files = {
+    "EPUB/images/cover image.png": {},
+    "EPUB/images/literal%20name.png": {},
+    "EPUB/styles/book.css": {}
+  };
+  assert.equal(resolveArchivePath("EPUB", "images/cover%20image.png#page=1", files), "EPUB/images/cover image.png");
+  assert.equal(resolveArchivePath("EPUB", "images/literal%20name.png", files), "EPUB/images/literal%20name.png");
+  assert.equal(resolveArchivePath("EPUB/chapters", "../styles/book.css?v=1", files), "EPUB/styles/book.css");
+  assert.equal(resolveArchivePath("EPUB", "images/cover%2Fimage.png", files), "");
+  assert.equal(resolveArchivePath("EPUB", "https://evil.example/a.png", files), "");
+  assert.equal(resolveArchivePath("EPUB", "javascript:alert(1)", files), "");
 });
