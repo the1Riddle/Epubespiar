@@ -33,6 +33,7 @@ def write_epub(path: Path, malicious: bool = False):
   <body><h1>Reader security fixture</h1><p>Hello, Epubespiar.</p>
   <img id="test-cover" src="cover.png" alt="cover"/>
   <img id="test-illustration" src="images/illustration.png" alt="illustration"/>
+  <img id="encoded-cover" src="images/cover%20with%20spaces.png#image" alt="encoded cover"/>
   <img id="untrusted-blob" src="blob:https://untrusted.example.invalid/1234"/>
   <img src="unavailable.png" onerror="window.__epubespiar_xss = true"/>
   <script>window.__epubespiar_xss = true</script>
@@ -71,6 +72,7 @@ def write_epub(path: Path, malicious: bool = False):
         archive.writestr("EPUB/chapter.xhtml", chapter)
         archive.writestr("EPUB/cover.png", fixture_png())
         archive.writestr("EPUB/images/illustration.png", fixture_png())
+        archive.writestr("EPUB/images/cover with spaces.png", fixture_png())
 
 
 def main():
@@ -115,7 +117,7 @@ def main():
                 # without permitting script/event handlers from the EPUB.
                 page.wait_for_timeout(700)
                 images = host.evaluate("""(el) =>
-                  ['test-cover', 'test-illustration'].map(id => {
+                  ['test-cover', 'test-illustration', 'encoded-cover'].map(id => {
                     const image = el.shadowRoot.querySelector('#' + id);
                     return {id, src: image?.getAttribute('src'),
                             loaded: !!image?.complete && image.naturalWidth > 0,
