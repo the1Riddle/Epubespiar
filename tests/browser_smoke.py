@@ -65,6 +65,7 @@ def write_epub(path: Path, malicious: bool = False):
 </metadata>
 <manifest>
   <item id="one" href="chapter.xhtml" media-type="application/xhtml+xml"/>
+  <item id="cover" href="images/cover%20with%20spaces.png" media-type="image/png" properties="cover-image"/>
 </manifest>
 <spine><itemref idref="one"/></spine>
 </package>""",
@@ -132,6 +133,26 @@ def main():
                   el.shadowRoot.querySelector('#untrusted-blob')?.getAttribute('src')
                 """)
                 assert not untrusted, "Arbitrary EPUB-supplied blob URL survived sanitizer"
+                saved_cover = page.evaluate("""async () => {
+                  const db = await new Promise((resolve, reject) => {
+                    const request = indexedDB.open('EpubReaderDB');
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                  });
+                  try {
+                    return await new Promise((resolve, reject) => {
+                      const tx = db.transaction('books', 'readonly');
+                      const request = tx.objectStore('books').getAll();
+                      request.onsuccess = () => resolve(request.result[0]?.cover || '');
+                      request.onerror = () => reject(request.error);
+                    });
+                  } finally {
+                    db.close();
+                  }
+                }""")
+                assert saved_cover.startswith('data:image/png;base64,'), (
+                    'Encoded OPF cover image not saved in bookshelf'
+                )
                 assert page.evaluate("window.__epubespiar_xss") is None, "EPUB executed script"
                 assert not errors, f"Reader JS errors: {errors}"
                 print("PASS: extension renders cover and chapter images; unsafe XHTML removed")
