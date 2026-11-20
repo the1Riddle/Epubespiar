@@ -40,23 +40,20 @@ export const resolveArchivePath = (basePath, reference, files) => {
   const unresolved = resolvePath(basePath, bareReference);
   if (!unresolved) return "";
 
+  // Decode each filename component without letting encoded slashes or
+  // backslashes create new path components.
   let decoded;
   try {
-    decoded = bareReference
-      .split("/")
-      .map((segment) => decodeURIComponent(segment))
-      .join("/");
+    const segments = bareReference.split("/").map((part) =>
+      decodeURIComponent(part)
+    );
+    if (segments.some((part) =>
+      part.includes("/") || part.includes("\\") || /[\u0000-\u001f]/.test(part)
+    )) return "";
+    decoded = segments.join("/");
   } catch {
     decoded = bareReference;
   }
-
-  // Encoded separators or traversal components must never change ZIP
-  // directory boundaries. Only decode the individual filename segments.
-  const segments = decoded.split("/");
-  if (segments.some((segment) =>
-    segment.includes("/") || segment.includes("\\") ||
-    (segment !== "." && segment !== ".." && /[\u0000-\u001f]/.test(segment))
-  )) return "";
 
   const canonical = resolvePath(basePath, decoded);
   // Prefer the decoded member; fall back for archives with literal '%' names.
