@@ -1,4 +1,4 @@
-import { resolvePath } from "./pathUtils.js";
+import { resolveArchivePath } from "./pathUtils.js";
 
 // JSZip's async('blob') creates an untyped Blob. Give extracted images their
 // MIME type so Chromium and Firefox can decode them consistently from blob: URLs.
@@ -43,7 +43,7 @@ const processCssUrls = async (
     )
       continue;
 
-    const resolved = resolvePath(cssBasePath, original);
+    const resolved = resolveArchivePath(cssBasePath, original, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
@@ -78,7 +78,7 @@ export const parseAndProcessChapter = async (
   const links = doc.querySelectorAll("link[rel='stylesheet']");
   for (const link of Array.from(links)) {
     const href = link.getAttribute("href") || "";
-    const resolved = resolvePath(basePath, href);
+    const resolved = resolveArchivePath(basePath, href, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
@@ -122,7 +122,7 @@ export const parseAndProcessChapter = async (
     const src = image.getAttribute("src") || "";
     if (!src || src.startsWith("data:") || src.startsWith("blob:")) continue;
 
-    const resolved = resolvePath(basePath, src);
+    const resolved = resolveArchivePath(basePath, src, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
@@ -140,7 +140,7 @@ export const parseAndProcessChapter = async (
       image.getAttribute("xlink:href") || image.getAttribute("href") || "";
     if (!href || href.startsWith("data:") || href.startsWith("blob:")) continue;
 
-    const resolved = resolvePath(basePath, href);
+    const resolved = resolveArchivePath(basePath, href, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
