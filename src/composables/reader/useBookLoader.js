@@ -2,6 +2,7 @@ import useBookStorage from "../useBookStorage.js";
 import useCollections from "../useCollections.js";
 import { validateFile, validateURL } from "../../utils/security.js";
 import { fetchWithRetry } from "../../services/epubHttps/fetchWithRetry.js";
+import { readLimitedBlob } from "../../services/epubHttps/limitedResponse.js";
 import { parseEpubArchive } from "../../services/epubProcesor/parseEpubArchive.js";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
@@ -11,7 +12,7 @@ export function useBookLoader({
   refs,
   addNotification,
   resetReaderState,
-  createTrackedObjectUrl,
+  registerObjectUrl,
   restoreReadingPosition,
   onSaved,
   onOpened,
@@ -52,6 +53,7 @@ export function useBookLoader({
     busy = true;
     const shouldOpen = !!storedId || !chapters.value.length;
     const urls = [];
+    let urlsTransferred = false;
     const makeUrl = (blob) => {
       const url = URL.createObjectURL(blob);
       urls.push(url);
@@ -119,12 +121,12 @@ export function useBookLoader({
         localStorage.setItem("reader-has-imported", "true");
         await onSaved?.();
       }
-      if (!shouldOpen) {
-        urls.forEach((url) => URL.revokeObjectURL(url));
-        return true;
-      }
+      if (!shouldOpen) return true;
       persistReadingPosition?.();
       resetReaderState();
+      // Only register new book resources after the previous book has been reset.
+      urls.forEach(registerObjectUrl);
+      urlsTransferred = true;
       loadingMessage.value = "Rendering chapters...";
       chapters.value = chapterEntries;
       tableOfContents.value = sidebarToc;
@@ -140,6 +142,7 @@ export function useBookLoader({
       });
       return true;
     } catch (error) {
+      if (urlsTransferred) resetReaderState();
       console.error("Failed to load EPUB:", error);
 
       addNotification({
@@ -148,6 +151,8 @@ export function useBookLoader({
       });
       return false;
     } finally {
+      // Failed or metadata-only imports never transfer ownership to reader state.
+      if (!urlsTransferred) urls.forEach((url) => URL.revokeObjectURL(url));
       busy = false;
       isLoadingBook.value = false;
     }
@@ -158,7 +163,8 @@ export function useBookLoader({
       const fileParam = new URLSearchParams(window.location.search).get("file");
       if (!fileParam) return;
 
-      const url = decodeURIComponent(fileParam);
+      // URLSearchParams.get() already decodes the query value.
+      const url = fileParam;
       if (!validateURL(url)) throw new Error("Invalid or insecure URL");
 
       isLoadingBook.value = true;
@@ -170,7 +176,7 @@ export function useBookLoader({
 
       const response = await fetchWithRetry(url, 2);
 
-      const blob = await response.blob();
+      const blob = await readLimitedBlob(response, MAX_FILE_SIZE);
       await loadEpub(
         new File([blob], "downloaded.epub", { type: "application/epub+zip" }),
         true,

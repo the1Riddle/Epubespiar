@@ -1,14 +1,7 @@
 import baseManifest from './manifest.config.js';
 
-// Add background permissions
-const permissions = [...(baseManifest.permissions || [])];
-if (!permissions.includes('background')) {
-  permissions.push('background');
-}
-
 const chromeManifest = {
   ...baseManifest,
-  permissions,
   offline_enabled: true,
   author: {
     name: "rezzcode",
@@ -22,7 +15,7 @@ const chromeManifest = {
     type: "module"
   },
   content_security_policy: {
-    extension_pages: "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline'",
+    extension_pages: baseManifest.content_security_policy.extension_pages,
     sandbox: "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline'; child-src 'self';"
   },
 };

@@ -65,6 +65,7 @@
         :fontWeight="fontWeight"
         :fontFamily="fontFamily"
         :chapters="chapters"
+        :is-trusted-object-url="isTrustedObjectUrl"
         @content-scroll="handleContentScroll"
         @navigate-internal="handleInternalNavigation"
       />
@@ -114,7 +115,7 @@ export default {
       currentBookKey, isDragging, isLoadingBook,
       loadingTitle, loadingMessage, loadingSubtitle,
       showLoadingProgress, loadingProgress, isBookLoaded,
-      createTrackedObjectUrl, cleanupObjectUrls, resetReaderState
+      registerObjectUrl, isTrustedObjectUrl, cleanupObjectUrls, resetReaderState
     } = readerState;
 
     const currentChapterTitle = computed(() => {
@@ -163,7 +164,7 @@ export default {
       },
       addNotification,
       resetReaderState,
-      createTrackedObjectUrl,
+      registerObjectUrl,
       restoreReadingPosition: readingPosition.restoreReadingPosition
     });
 
@@ -313,6 +314,7 @@ export default {
       settingsOpen, fontWeight, fontFamily, showInlineControls, currentChapterTitle,
       zoomLevel, fontSize, bookContent, tableOfContents,
       currentChapter, chapters, currentEpubUrl,
+      isTrustedObjectUrl,
       isLoadingBook, loadingTitle, loadingMessage,
       loadingSubtitle, showLoadingProgress,
       loadingProgress, isBookLoaded, toggleSidebar,
