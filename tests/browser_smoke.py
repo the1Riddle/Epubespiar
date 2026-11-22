@@ -193,11 +193,19 @@ def main():
                 page.keyboard.press("Control+F9")
                 settings.wait_for(state="hidden", timeout=5000)
 
+                # Esc should leave fullscreen without closing the TOC.
+                page.keyboard.press("Control+[")
+                page.locator(".sidebar.open").wait_for(state="visible", timeout=5000)
                 fullscreen_button = page.locator('button[title="Enter full Screen"]')
                 fullscreen_button.click()
                 page.wait_for_function("!!document.fullscreenElement", timeout=5000)
                 page.keyboard.press("Escape")
                 page.wait_for_function("!document.fullscreenElement", timeout=5000)
+                assert page.locator(".sidebar.open").is_visible(), (
+                    "Escape exited fullscreen but unexpectedly closed the TOC"
+                )
+                page.keyboard.press("Control+[")
+                page.locator(".sidebar.open").wait_for(state="hidden", timeout=5000)
 
                 assert not errors, f"Reader JS errors after shortcuts: {errors}"
                 print("PASS: cover/images, unsafe XHTML blocked, panel toggles and Escape fullscreen")
