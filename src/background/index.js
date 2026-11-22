@@ -15,6 +15,7 @@ const messageRateLimit = new Map();
 const readerTabs = new Map();
 const processedDownloads = new Set();
 const examiningDownloads = new Set();
+const manualDownloadIds = new Set();
 
 // Function to generate random instance ID
 function generateInstanceId() {
@@ -137,6 +138,7 @@ function consumeAllowedDownload(downloadItem) {
 
 async function handlePotentialEpubDownload(downloadItem) {
   if (!downloadItem || processedDownloads.has(downloadItem.id) ||
+      manualDownloadIds.has(downloadItem.id) ||
       examiningDownloads.has(downloadItem.id)) {
     return;
   }
@@ -162,7 +164,10 @@ async function handlePotentialEpubDownload(downloadItem) {
       return;
     }
 
-    if (consumeAllowedDownload(downloadItem)) return;
+    if (consumeAllowedDownload(downloadItem)) {
+      manualDownloadIds.add(downloadItem.id);
+      return;
+    }
 
     const result = await browser.storage.local.get('interceptDownloads');
     const interceptEnabled = result.interceptDownloads === true;
@@ -195,6 +200,12 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
 });
 
 browser.downloads.onChanged.addListener(async (delta) => {
+  if (manualDownloadIds.has(delta.id)) {
+    if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') {
+      manualDownloadIds.delete(delta.id);
+    }
+    return;
+  }
   if (processedDownloads.has(delta.id)) {
     if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') {
       processedDownloads.delete(delta.id);
@@ -226,6 +237,7 @@ browser.downloads.onChanged.addListener(async (delta) => {
 // Clean up download IDs after the browser removes the item.
 browser.downloads.onErased.addListener((downloadId) => {
   processedDownloads.delete(downloadId);
+  manualDownloadIds.delete(downloadId);
 });
 
 // Handle tab removal
@@ -283,6 +295,7 @@ browser.runtime.onMessage.addListener((message, sender) => {
       allowedDownloads.set(message.url, now + ALLOW_DOWNLOAD_TTL_MS);
       browser.downloads.download({ url: message.url })
         .then((id) => {
+          manualDownloadIds.add(id);
           resolve({ success: true, downloadId: id });
         })
         .catch((err) => {
