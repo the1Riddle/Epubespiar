@@ -15,7 +15,8 @@ export const readerShortcuts = [
   { action: "fontSmaller", key: "-", alt: true, repeat: true },
   { action: "fontLarger", key: "=", alt: true, repeat: true },
   { action: "resetFont", key: "0", alt: true },
-  { action: "closeToc", key: "Escape" },
+  // Escape belongs to fullscreen only; panels close with their own shortcuts.
+  { action: "exitFullscreen", key: "Escape" },
 ];
 
 export function isReaderTypingEvent(event) {
@@ -40,8 +41,6 @@ export function createReaderShortcutHandler({
       event.isComposing ||
       event.keyCode === 229 ||
       event.getModifierState?.("AltGraph") ||
-      isReaderTypingEvent(event) ||
-      isBlocked()
     )
       return;
 
@@ -57,6 +56,16 @@ export function createReaderShortcutHandler({
 
     const action = actions[binding.action];
     if (!action || (action.enabled && !action.enabled())) return;
+    if (isBlocked(binding)) return;
+
+    // A panel's own shortcut may close it even if focus is inside its fields.
+    // Unrelated shortcuts keep the normal text-entry protection.
+    if (isReaderTypingEvent(event)) {
+      const allowed = typeof action.allowWhenTyping === "function"
+        ? action.allowWhenTyping()
+        : action.allowWhenTyping;
+      if (!allowed) return;
+    }
 
     event.preventDefault();
     if (!event.repeat || binding.repeat) action.run();
@@ -65,6 +74,8 @@ export function createReaderShortcutHandler({
 
 export function useReaderShortcuts(options) {
   const handler = createReaderShortcutHandler(options);
-  onMounted(() => document.addEventListener("keydown", handler));
-  onUnmounted(() => document.removeEventListener("keydown", handler));
+  // Capture permits the settings toggle to close its own modal dialog;
+  // ReaderSettings intentionally stops bubbling key events inside the dialog.
+  onMounted(() => document.addEventListener("keydown", handler, true));
+  onUnmounted(() => document.removeEventListener("keydown", handler, true));
 }
