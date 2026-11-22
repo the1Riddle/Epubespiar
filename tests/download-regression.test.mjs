@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { waitForDownloadActivity } from "../src/services/epubProcesor/downloadActivity.js";
 import { fetchWithRetry } from "../src/services/epubHttps/fetchWithRetry.js";
 import { readLimitedBlob } from "../src/services/epubHttps/limitedResponse.js";
+import { isAuthorizedReaderDownload } from "../src/background/downloadPolicy.js";
 
 test("browser download indicator waits for received bytes, not just the download ID", async () => {
   let checks = 0;
@@ -76,4 +77,27 @@ test("permission failures and size-limit failures are never retried", async () =
     pause: async () => {},
   }), /size limit/);
   assert.equal(calls, 1);
+});
+
+test("opaque download endpoints are allowed only from the matching extension reader", () => {
+  const url = "https://example.test/download/99021521?token=test";
+  const readerUrl = "chrome-extension://epubespiar-test/reader.html";
+  const sender = {
+    id: "epubespiar-test",
+    url: `${readerUrl}?file=${encodeURIComponent(url)}&instance=book`,
+  };
+  const request = { sender, url, readerUrl, extensionId: "epubespiar-test" };
+  assert.equal(isAuthorizedReaderDownload(request), true);
+  assert.equal(isAuthorizedReaderDownload({
+    ...request,
+    url: "https://evil.test/payload",
+  }), false);
+  assert.equal(isAuthorizedReaderDownload({
+    ...request,
+    sender: { ...sender, url: "https://example.test/page" },
+  }), false);
+  assert.equal(isAuthorizedReaderDownload({
+    ...request,
+    url: "http://example.test/download/99021521",
+  }), false);
 });
