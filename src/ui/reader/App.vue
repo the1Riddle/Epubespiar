@@ -45,6 +45,20 @@
     <bookshelf-sidebar :isOpen="bookshelfOpen" :books="shelfBooks" :isBookLoaded="isBookLoaded" @close="bookshelfOpen = false" @file-upload="file => loadEpub(file)" @book-select="openShelfBook" @book-deleted="refreshShelf" />
     <div class="main-content">
       <div
+        v-if="!isBookLoaded && onlineLoadError && currentEpubUrl"
+        class="online-load-recovery"
+        role="alert"
+      >
+        <strong>Couldn't open this online EPUB</strong>
+        <p>{{ onlineLoadError }}</p>
+        <div class="online-load-actions">
+          <button type="button" @click="retryOnlineBook">Retry preview</button>
+          <button type="button" @click="downloadEpub" :disabled="downloadPending">
+            {{ downloadPending ? 'Waiting for browser…' : 'Download with browser' }}
+          </button>
+        </div>
+      </div>
+      <div
         v-if="sidebarOpen"
         class="sidebar-backdrop"
         @click="toggleSidebar"
@@ -116,7 +130,7 @@ export default {
     const {
       sidebarOpen, currentPage, totalPages, zoomLevel,
       fontSize, fontWeight, fontFamily, showInlineControls, settingsReady, bookContent, tableOfContents,
-      chapters, spineItems, currentChapter, currentEpubUrl,
+      chapters, spineItems, currentChapter, currentEpubUrl, onlineLoadError,
       currentBookKey, isDragging, isLoadingBook,
       loadingTitle, loadingMessage, loadingSubtitle,
       showLoadingProgress, loadingProgress, isBookLoaded,
@@ -171,7 +185,7 @@ export default {
         isLoadingBook, loadingTitle, loadingMessage,
         loadingSubtitle, showLoadingProgress, currentEpubUrl,
         currentBookKey, chapters, tableOfContents,
-        currentChapter, spineItems
+        currentChapter, spineItems, onlineLoadError
       },
       addNotification,
       resetReaderState,
@@ -205,6 +219,7 @@ export default {
       bookshelfOpen.value = true;
       refreshShelf();
       currentEpubUrl.value = null;
+      onlineLoadError.value = '';
       sidebarOpen.value = false;
       
       const homeUrl = `${window.location.pathname}${window.location.hash || ''}`;
@@ -382,7 +397,8 @@ export default {
       sidebarOpen, currentPage, totalPages,
       settingsOpen, fontWeight, fontFamily, showInlineControls, currentChapterTitle,
       zoomLevel, fontSize, bookContent, tableOfContents,
-      currentChapter, chapters, currentEpubUrl,
+      currentChapter, chapters, currentEpubUrl, onlineLoadError,
+      retryOnlineBook: loader.loadBookFromUrl,
       isTrustedObjectUrl,
       isLoadingBook, loadingTitle, loadingMessage,
       loadingSubtitle, showLoadingProgress,
@@ -411,6 +427,49 @@ export default {
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+
+.online-load-recovery {
+  position: absolute;
+  z-index: 45;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(430px, calc(100% - 24px));
+  padding: 16px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 10px;
+  background: var(--toolbar-bg-color, #fff);
+  color: var(--text-color, #242424);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+
+.online-load-recovery p {
+  margin: 8px 0 14px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.online-load-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.online-load-actions button {
+  border: 1px solid var(--hover-outline-color, #10b981);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.online-load-actions button:disabled {
+  opacity: 0.5;
+  cursor: progress;
 }
 
 .main-content {
