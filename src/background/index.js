@@ -183,9 +183,11 @@ async function handlePotentialEpubDownload(downloadItem) {
 
     if (isEpubByUrl || isEpubByFilename || isEpubByMime) {
       processedDownloads.add(downloadItem.id);
+      // Create the reader before cancelling the original transfer. A tab
+      // creation failure must not destroy the user's intended download.
+      await openReaderTab(downloadItem.url, false, { allowSafeNonEpubUrl: true });
       await browser.downloads.cancel(downloadItem.id);
       await browser.downloads.erase({ id: downloadItem.id });
-      await openReaderTab(downloadItem.url, false, { allowSafeNonEpubUrl: true });
     }
   } catch (error) {
     console.error('Error processing potential EPUB download:', error);
