@@ -155,7 +155,53 @@ def main():
                 )
                 assert page.evaluate("window.__epubespiar_xss") is None, "EPUB executed script"
                 assert not errors, f"Reader JS errors: {errors}"
-                print("PASS: extension renders cover and chapter images; unsafe XHTML removed")
+
+                # Panel commands must be reversible, with Escape reserved for
+                # fullscreen. Focus the page rather than the EPUB file picker.
+                page.evaluate("document.activeElement?.blur()")
+                page.keyboard.press("Control+Home")
+                page.locator(".bookshelf-container").wait_for(state="visible", timeout=5000)
+                page.keyboard.press("Escape")
+                assert page.locator(".bookshelf-container").is_visible(), (
+                    "Escape unexpectedly closed the library"
+                )
+                page.keyboard.press("Control+Home")
+                page.locator(".bookshelf-container").wait_for(state="hidden", timeout=5000)
+
+                page.keyboard.press("Control+[")
+                page.locator(".sidebar.open").wait_for(state="visible", timeout=5000)
+                page.keyboard.press("Escape")
+                assert page.locator(".sidebar.open").is_visible(), (
+                    "Escape unexpectedly closed the table of contents"
+                )
+                # Both TOC shortcuts operate on the same toggle state.
+                page.keyboard.press("Control+]")
+                page.locator(".sidebar.open").wait_for(state="hidden", timeout=5000)
+                page.keyboard.press("Control+]")
+                page.locator(".sidebar.open").wait_for(state="visible", timeout=5000)
+                page.keyboard.press("Control+]")
+                page.locator(".sidebar.open").wait_for(state="hidden", timeout=5000)
+
+                page.keyboard.press("Control+F9")
+                settings = page.locator("dialog.reader-settings[open]")
+                settings.wait_for(state="visible", timeout=5000)
+                page.keyboard.press("Escape")
+                assert settings.is_visible(), "Escape unexpectedly dismissed settings"
+                # Settings blocks bubble-phase events; the keyboard toggle
+                # must close it even when focus is inside a form control.
+                settings.locator("input[type=checkbox]").first.focus()
+                page.keyboard.press("Control+F9")
+                settings.wait_for(state="hidden", timeout=5000)
+
+                fullscreen_button = page.locator('button[title="Enter full Screen"]')
+                fullscreen_button.click()
+                page.wait_for_function("!!document.fullscreenElement", timeout=5000)
+                page.keyboard.press("Escape")
+                page.wait_for_function("!document.fullscreenElement", timeout=5000)
+
+                assert not errors, f"Reader JS errors after shortcuts: {errors}"
+                print("PASS: cover/images, unsafe XHTML blocked, panel toggles and Escape fullscreen")
+
             finally:
                 context.close()
 
