@@ -15,8 +15,10 @@ const parseOpfPath = (containerXml) => {
 
 export async function parseEpubArchive(file, createTrackedObjectUrl) {
   const arrayBuffer = await file.arrayBuffer();
+  // Read standard central-directory sizes before extraction: JSZip's private
+  // _data fields are not stable across versions or EPUB producer variants.
+  assertArchiveWithinLimits(arrayBuffer);
   const zip = await JSZip.loadAsync(arrayBuffer);
-  assertArchiveWithinLimits(zip);
 
   const containerContent = await zip
     .file("META-INF/container.xml")
