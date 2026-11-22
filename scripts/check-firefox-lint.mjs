@@ -25,8 +25,8 @@ const normalizeFile = file => String(file || "").replace(/\\/g, "/").replace(/^\
 /**
  * Strict CI gate for addons-linter JSON output.
  *
- * Deliberately exempts at most one identified false positive from Vue's
- * generated runtime. Never blanket-ignore warning codes or skip files.
+ * Accepts at most one verified generated-code warning from each of Vue
+ * and DOMPurify. Never blanket-ignore warning codes or skip files.
  */
 export function checkFirefoxLint(report, cliExitCode = 0, {
   readBuiltSource = file => readFileSync(resolve("dist/firefox", file), "utf8"),
