@@ -1,0 +1,71 @@
+name: Extension audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - dev
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Security and regression tests
+        run: node --test tests/*.test.mjs
+      - name: Build both browser targets
+        env:
+          FIREFOX_MANIFEST_EXT_ID: ${{ secrets.FIREFOX_MANIFEST_EXT_ID }}
+        run: |
+          if [ -z "$FIREFOX_MANIFEST_EXT_ID" ]; then
+            echo "::error::Missing FIREFOX_MANIFEST_EXT_ID secret (needed for Firefox MV3 validation)"
+            exit 1
+          fi
+          pnpm run build
+      - name: Validate packaged manifests and assets
+        run: node scripts/verify-build.mjs
+      - name: Calculate packaged ZIP sizes
+        run: |
+          for target in chrome firefox; do
+            (cd "dist/$target" && zip -q -9 -r "../../epubespiar-$target.zip" .)
+            bytes=$(stat -c%s "epubespiar-$target.zip")
+            echo "$target archive bytes: $bytes"
+            if [ "$bytes" -gt 145000 ]; then
+              echo "::error::$target ZIP exceeds the 145000-byte size budget"
+              exit 1
+            fi
+            echo "$target largest payload files:"
+            find "dist/$target" -type f -printf '%s %p\n' | sort -nr | head -12
+          done
+      # Run Mozilla's validator against the exact ZIP we would distribute.
+      # The CLI is installed only for this CI invocation, not in package.json.
+      - name: Firefox add-on lint (errors and unexpected warnings fail)
+        run: |
+          set +e
+          pnpm dlx addons-linter@10.15.0 epubespiar-firefox.zip --output=json > addons-linter-report.json
+          lint_status=$?
+          set -e
+          node scripts/check-firefox-lint.mjs addons-linter-report.json "$lint_status"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: epubespiar-browser-zips
+          path: |
+            epubespiar-chrome.zip
+            epubespiar-firefox.zip
+      - name: Dependency vulnerability gate (high and critical)
+        run: pnpm audit --audit-level high
+      - name: Report moderate dependency advisories (informational)
+        run: pnpm audit --audit-level moderate
+        continue-on-error: true

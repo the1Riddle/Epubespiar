@@ -1,24 +1,28 @@
-import { sanitizeFilename } from "../../utils/security.js";
+import browser from "webextension-polyfill";
+import { waitForDownloadActivity } from "./downloadActivity.js";
 
+/**
+ * Hand the original HTTPS URL to the browser download manager. Unlike fetch
+ * + blob + <a>, the native API preserves cookies, server filenames, and exposes
+ * an ID we can query for real transfer activity or network interruption.
+ */
 export async function downloadEpub(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `HTTP error: ${response.status} ${response.statusText || ""}`.trim(),
-    );
+  if (new URL(url).protocol !== "https:") {
+    throw new Error("Only HTTPS EPUB sources can be downloaded");
   }
 
-  const blob = await response.blob();
-  const rawName = url.split("/").pop()?.split("?")[0] || "book.epub";
-  const filename = sanitizeFilename(rawName);
-  const downloadUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
+  const response = await browser.runtime.sendMessage({
+    type: "ALLOW_DOWNLOAD",
+    url,
+  });
+  if (!response?.success || !Number.isInteger(response.downloadId)) {
+    throw new Error(response?.error || "Browser did not accept the download");
+  }
 
-  link.href = downloadUrl;
-  link.download = filename.endsWith(".epub") ? filename : `${filename}.epub`;
-
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(downloadUrl);
+  return waitForDownloadActivity(response.downloadId, {
+    getItem: async (id) => {
+      const [item] = await browser.downloads.search({ id });
+      return item;
+    },
+  });
 }
