@@ -27,6 +27,7 @@ export function useBookLoader({
     loadingSubtitle,
     showLoadingProgress,
     currentEpubUrl,
+    onlineLoadError,
     currentBookKey,
     chapters,
     tableOfContents,
@@ -76,6 +77,7 @@ export function useBookLoader({
       }
 
       loadingMessage.value = "Parsing book metadata...";
+      if (preserveUrl) onlineLoadError.value = "";
       const {
         metadata,
         cover,
@@ -144,6 +146,9 @@ export function useBookLoader({
     } catch (error) {
       if (urlsTransferred) resetReaderState();
       console.error("Failed to load EPUB:", error);
+      if (preserveUrl) {
+        onlineLoadError.value = error?.message || "The file could not be opened as an EPUB";
+      }
 
       addNotification({
         message: "Failed to load book. Please check the EPUB file.",
@@ -173,16 +178,26 @@ export function useBookLoader({
       loadingSubtitle.value = "This may take a moment";
 
       currentEpubUrl.value = url.startsWith("https://") ? url : null;
+      onlineLoadError.value = "";
 
-      const response = await fetchWithRetry(url, 2);
+      const blob = await fetchWithRetry(url, 2, {
+        readResponse: response => readLimitedBlob(response, MAX_FILE_SIZE),
+        onRetry: ({ attempt, total }) => {
+          loadingMessage.value = `Connection interrupted; retrying ${attempt}/${total}…`;
+          loadingSubtitle.value = "The source server may be temporarily unavailable";
+        },
+      });
 
-      const blob = await readLimitedBlob(response, MAX_FILE_SIZE);
-      await loadEpub(
+      const opened = await loadEpub(
         new File([blob], "downloaded.epub", { type: "application/epub+zip" }),
         true,
       );
+      if (!opened && !onlineLoadError.value) {
+        onlineLoadError.value = "The remote file could not be opened as an EPUB";
+      }
     } catch (error) {
       console.error("Error loading book from URL:", error);
+      onlineLoadError.value = error?.message || "Could not retrieve this EPUB";
       isLoadingBook.value = false;
       addNotification({
         message: "Failed to load book from URL",
