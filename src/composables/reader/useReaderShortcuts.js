@@ -40,7 +40,7 @@ export function createReaderShortcutHandler({
       event.defaultPrevented ||
       event.isComposing ||
       event.keyCode === 229 ||
-      event.getModifierState?.("AltGraph") ||
+      event.getModifierState?.("AltGraph")
     )
       return;
 
