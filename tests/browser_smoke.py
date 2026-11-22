@@ -188,8 +188,10 @@ def main():
                 page.keyboard.press("Escape")
                 assert settings.is_visible(), "Escape unexpectedly dismissed settings"
                 # Settings blocks bubble-phase events; the keyboard toggle
-                # must close it even when focus is inside a form control.
-                settings.locator("input[type=checkbox]").first.focus()
+                # must close it even when focus is inside a settings control.
+                # Checkboxes are conditional on the selected tab, while tabs
+                # always exist and are keyboard focusable.
+                settings.locator('[role="tab"]').first.focus()
                 page.keyboard.press("Control+F9")
                 settings.wait_for(state="hidden", timeout=5000)
 
