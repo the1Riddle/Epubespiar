@@ -2,12 +2,35 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
+ * Precisely two known generated sinks: Vue static template insertion and
+ * DOMPurify's detached-document fallback. Neither exception applies unless
+ * the bundled source around the reported line/column proves its origin.
+ */
+const KNOWN_GENERATED_SINKS = Object.freeze({
+  "src/helper-plugin-vue_export-helper.js": {
+    name: "Vue static-template insertion",
+    verify: snippet => snippet.includes("insertStaticContent(") &&
+      snippet.includes(".innerHTML=") && snippet.includes(".content"),
+  },
+  "src/reader.js": {
+    name: "DOMPurify detached-document parser fallback",
+    verify: snippet => snippet.includes(".parseFromString(") &&
+      snippet.includes(".createDocument(") &&
+      snippet.includes(".documentElement.innerHTML="),
+  },
+});
+const normalizeFile = file => String(file || "").replace(/\\/g, "/").replace(/^\.\//, "");
+
+
+/**
  * Strict CI gate for addons-linter JSON output.
  *
  * Deliberately exempts at most one identified false positive from Vue's
  * generated runtime. Never blanket-ignore warning codes or skip files.
  */
-export function checkFirefoxLint(report, cliExitCode = 0) {
+export function checkFirefoxLint(report, cliExitCode = 0, {
+  readBuiltSource = file => readFileSync(resolve("dist/firefox", file), "utf8"),
+} = {}) {
   if (!report || typeof report !== "object" || Array.isArray(report)) {
     throw new Error("Invalid addons-linter JSON report");
   }
@@ -36,25 +59,47 @@ export function checkFirefoxLint(report, cliExitCode = 0) {
     throw new Error("addons-linter summary does not match its diagnostics");
   }
 
-  const isKnownVueWarning = (warning) => {
-    const file = String(warning.file || "").replace(/\\/g, "/").replace(/^\.\//, "");
-    return warning.code === "UNSAFE_VAR_ASSIGNMENT" &&
-      file === "src/helper-plugin-vue_export-helper.js" &&
-      warning.message === "Unsafe assignment to innerHTML";
-  };
-
-  const known = warnings.filter(isKnownVueWarning);
-  const unexpected = [...errors, ...warnings.filter(warning => !isKnownVueWarning(warning))];
-  if (known.length > 1) unexpected.push(...known.slice(1));
+  const sourceCache = new Map();
+  const knownByFile = new Map();
+  const unexpected = [...errors];
+  for (const warning of warnings) {
+    const file = normalizeFile(warning.file);
+    const knownSink = KNOWN_GENERATED_SINKS[file];
+    const lineNo = Number(warning.line);
+    const columnNo = Number(warning.column);
+    if (!knownSink ||
+        warning.code !== "UNSAFE_VAR_ASSIGNMENT" ||
+        warning.message !== "Unsafe assignment to innerHTML" ||
+        !Number.isSafeInteger(lineNo) || lineNo < 1 ||
+        !Number.isSafeInteger(columnNo) || columnNo < 1 ||
+        knownByFile.has(file)) {
+      unexpected.push(warning);
+      continue;
+    }
+    try {
+      if (!sourceCache.has(file)) sourceCache.set(file, readBuiltSource(file));
+      const line = sourceCache.get(file).split(/\r?\n/)[lineNo - 1] || "";
+      const idx = columnNo - 1;
+      const assignment = line.slice(idx, idx + 80);
+      const atAssignment = /^[A-Za-z_$][\w$]*(?:\.documentElement)?\.innerHTML=/.test(assignment);
+      const nearby = line.slice(Math.max(0, idx - 600), idx + 230);
+      if (!atAssignment || !knownSink.verify(nearby)) {
+        unexpected.push(warning);
+        continue;
+      }
+      knownByFile.set(file, knownSink.name);
+    } catch {
+      // Failure to verify the actual generated file fails closed.
+      unexpected.push(warning);
+    }
+  }
 
   const total = errors.length + warnings.length + notices.length;
   const messages = [
     `Firefox addons-linter: ${errors.length} errors, ${warnings.length} warnings, ${notices.length} notices.`,
   ];
-  if (known.length) {
-    messages.push(
-      `Known Vue-generated innerHTML warning: ${Math.min(known.length, 1)} narrowly accepted (see scripts/check-firefox-lint.mjs).`,
-    );
+  for (const name of knownByFile.values()) {
+    messages.push("Accepted verified library-generated warning: " + name + ".");
   }
 
   for (const item of unexpected) {
@@ -71,7 +116,7 @@ export function checkFirefoxLint(report, cliExitCode = 0) {
 
   const failed = unexpected.length > 0 || cliExitCode !== 0;
   if (!failed) messages.push(`PASS: ${total} diagnostics examined; all errors and unexpected warnings absent.`);
-  return { failed, messages, acceptedWarnings: Math.min(known.length, 1), unexpected };
+  return { failed, messages, acceptedWarnings: knownByFile.size, unexpected };
 }
 
 function main() {
