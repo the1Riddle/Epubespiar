@@ -14,7 +14,10 @@ export async function fetchWithRetry(url, retries = 2, {
   let lastError;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      const response = await fetcher(url, { cache: "no-store" });
+      // Cache bypass is only defined for HTTP(S); preserve file:// behavior
+      // in Chromium's local-file reader when its permission is enabled.
+      const options = /^https?:\/\//i.test(url) ? { cache: "no-store" } : undefined;
+      const response = await fetcher(url, options);
       if (!response.ok) {
         const error = new Error(`Request failed: HTTP ${response.status} ${response.statusText || ""}`.trim());
         error.httpStatus = response.status;
