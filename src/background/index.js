@@ -1,5 +1,5 @@
 import browser from "webextension-polyfill";
-import { canLoadLocalFileFromReader } from "./downloadPolicy.js";
+import { canLoadLocalFileFromReader, isAuthorizedReaderDownload } from "./downloadPolicy.js";
 
 
 // Rate limiting configuration
@@ -125,20 +125,6 @@ browser.action.onClicked.addListener((tab) => {
 // handles browsers that report byExtensionId; the URL token is a fallback.
 const allowedDownloads = new Map();
 const ALLOW_DOWNLOAD_TTL_MS = 120_000;
-
-function isAuthorizedReaderDownload(sender, url) {
-  if (sender?.id !== browser.runtime.id || typeof url !== 'string') return false;
-  try {
-    const target = new URL(url);
-    const source = new URL(sender.url || '');
-    const reader = new URL(browser.runtime.getURL('reader.html'));
-    return target.protocol === 'https:' && isSafeSupportedUrl(url) &&
-      source.origin === reader.origin && source.pathname === reader.pathname &&
-      source.searchParams.get('file') === url;
-  } catch {
-    return false;
-  }
-}
 
 function consumeAllowedDownload(downloadItem) {
   const url = downloadItem.url;
@@ -281,7 +267,12 @@ browser.runtime.onMessage.addListener((message, sender) => {
     } else if (message.type === 'ALLOW_DOWNLOAD') {
       // Only an actual reader page may download its own original source URL.
       // Many EPUB downloads use opaque /download/<id> endpoints without .epub.
-      if (!isAuthorizedReaderDownload(sender, message.url)) {
+      if (!isAuthorizedReaderDownload({
+        sender,
+        url: message.url,
+        extensionId: browser.runtime.id,
+        readerUrl: browser.runtime.getURL('reader.html'),
+      })) {
         reject(new Error('Unauthorized EPUB download request'));
         return;
       }
