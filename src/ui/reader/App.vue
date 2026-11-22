@@ -25,7 +25,7 @@
       :zoomLevel="zoomLevel"
       :showInlineControls="showInlineControls"
       :currentChapterTitle="currentChapterTitle"
-      @toggle-settings="settingsOpen = true"
+      @toggle-settings="toggleSettings"
       :epubUrl="currentEpubUrl"
       @toggle-bookshelf="toggleBookshelf"
       @toggle-sidebar="toggleSidebar"
@@ -144,7 +144,13 @@ export default {
       try { shelfBooks.value = await storage.getAllBooks(); }
       catch { addNotification({message:'Could not load library', type:'error'}); }
     };
-    const toggleBookshelf = () => { bookshelfOpen.value = !bookshelfOpen.value; sidebarOpen.value = false; refreshShelf(); };
+    const toggleBookshelf = () => {
+      bookshelfOpen.value = !bookshelfOpen.value;
+      if (bookshelfOpen.value) {
+        sidebarOpen.value = false;
+        refreshShelf();
+      }
+    };
     const openShelfBook = async book => {
       try {
         const saved = await storage.getBook(book.id);
@@ -180,6 +186,11 @@ export default {
 
     const toggleSidebar = () => {
       sidebarOpen.value = !sidebarOpen.value;
+      if (sidebarOpen.value) bookshelfOpen.value = false;
+    };
+
+    const toggleSettings = () => {
+      settingsOpen.value = !settingsOpen.value;
     };
 
     const handleCloseBook = () => {
@@ -235,8 +246,17 @@ export default {
     };
 
     // Include legacy library overlays as well as native/accessible dialogs.
-    const shortcutsBlocked = () => settingsOpen.value || isLoadingBook.value
-      || !!document.querySelector('dialog[open], [role="dialog"], [role="alertdialog"], .dialog-overlay');
+    const shortcutsBlocked = binding => {
+      // Esc must never dismiss reader panels; it only exits fullscreen.
+      if (binding?.action === 'exitFullscreen') return false;
+      if (isLoadingBook.value) return true;
+      // Repeating Ctrl+F9 must work from inside the settings dialog.
+      if (settingsOpen.value) return binding?.action !== 'openSettings';
+      // Nested collection dialogs still protect their form shortcuts.
+      return !!document.querySelector(
+        'dialog[open], [role="dialog"], [role="alertdialog"], .dialog-overlay'
+      );
+    };
     const canAdjustBook = () => isBookLoaded.value && !bookshelfOpen.value;
     const adjustFont = direction => {
       const { min, max, step } = readerLimits.fontSize;
@@ -249,9 +269,20 @@ export default {
         return [document, ...roots].some(root => root?.getSelection?.()?.toString().length > 0);
       },
       actions: {
-        openSettings: { enabled: canAdjustBook, run: () => { settingsOpen.value = true; } },
-        openToc: { enabled: () => isBookLoaded.value, run: () => { bookshelfOpen.value = false; sidebarOpen.value = true; } },
-        openLibrary: { run: () => { bookshelfOpen.value = true; sidebarOpen.value = false; refreshShelf(); } },
+        openSettings: {
+          enabled: () => isBookLoaded.value && !bookshelfOpen.value,
+          allowWhenTyping: () => settingsOpen.value,
+          run: toggleSettings
+        },
+        openToc: {
+          enabled: () => isBookLoaded.value,
+          allowWhenTyping: () => sidebarOpen.value,
+          run: toggleSidebar
+        },
+        openLibrary: {
+          allowWhenTyping: () => bookshelfOpen.value,
+          run: toggleBookshelf
+        },
         openBook: { enabled: () => !!headerToolbar.value, run: () => headerToolbar.value.openFilePicker() },
         closeBook: { enabled: () => isBookLoaded.value, run: handleCloseBook },
         zoomOut: { enabled: canAdjustBook, run: zoomOut },
@@ -260,7 +291,11 @@ export default {
         fontSmaller: { enabled: canAdjustBook, run: () => adjustFont(-1) },
         fontLarger: { enabled: canAdjustBook, run: () => adjustFont(1) },
         resetFont: { enabled: canAdjustBook, run: () => { fontSize.value = readerDefaults.fontSize; } },
-        closeToc: { enabled: () => sidebarOpen.value && !bookshelfOpen.value, run: () => { sidebarOpen.value = false; } },
+        exitFullscreen: {
+          enabled: () => !!document.fullscreenElement,
+          allowWhenTyping: true,
+          run: () => document.exitFullscreen()
+        },
       },
     });
 
@@ -309,7 +344,7 @@ export default {
 
     return {
       headerToolbar,
-      bookshelfOpen, shelfBooks, toggleBookshelf, openShelfBook, refreshShelf,
+      bookshelfOpen, shelfBooks, toggleBookshelf, toggleSettings, openShelfBook, refreshShelf,
       sidebarOpen, currentPage, totalPages,
       settingsOpen, fontWeight, fontFamily, showInlineControls, currentChapterTitle,
       zoomLevel, fontSize, bookContent, tableOfContents,
