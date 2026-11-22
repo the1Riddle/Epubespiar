@@ -1,4 +1,6 @@
 import test from "node:test";
+import JSZip from "jszip";
+
 import assert from "node:assert/strict";
 import { assertArchiveWithinLimits, ARCHIVE_LIMITS } from "../src/services/epubProcesor/archiveLimits.js";
 import { canLoadLocalFileFromReader } from "../src/background/downloadPolicy.js";
@@ -6,22 +8,69 @@ import { validateFile } from "../src/utils/security.js";
 import { readLimitedBlob } from "../src/services/epubHttps/limitedResponse.js";
 import { resolveArchivePath } from "../src/services/epubProcesor/pathUtils.js";
 
-const fakeZip = (sizes) => ({
-  files: Object.fromEntries(sizes.map((size, i) =>
-    [String(i), { dir: false, _data: { uncompressedSize: size } }])),
+const makeZip = async (files = { "mimetype": "application/epub+zip" }) => {
+  const zip = new JSZip();
+  for (const [name, content] of Object.entries(files)) zip.file(name, content);
+  return zip.generateAsync({ type: "uint8array" });
+};
+
+const editCentralDirectory = (bytes, edit) => {
+  const changed = bytes.slice();
+  const view = new DataView(changed.buffer);
+  const centralRecords = [];
+  let eocd = -1;
+  for (let i = changed.length - 22; i >= Math.max(0, changed.length - 65557); i--) {
+    if (view.getUint32(i, true) === 0x06054b50 &&
+        i + 22 + view.getUint16(i + 20, true) === changed.length) {
+      eocd = i; break;
+    }
+  }
+  if (eocd === -1) throw new Error("Bad test ZIP");
+  let ptr = view.getUint32(eocd + 16, true);
+  const count = view.getUint16(eocd + 10, true);
+  for (let i = 0; i < count; i++) {
+    centralRecords.push(ptr);
+    ptr += 46 + view.getUint16(ptr + 28, true) +
+      view.getUint16(ptr + 30, true) + view.getUint16(ptr + 32, true);
+  }
+  edit(view, centralRecords, eocd);
+  return changed;
+};
+
+test("ZIP central directory preflight accepts a real JSZip EPUB and ignores JSZip internals", async () => {
+  const bytes = await makeZip();
+  assert.doesNotThrow(() => assertArchiveWithinLimits(bytes));
+  assert.doesNotThrow(() => assertArchiveWithinLimits(bytes.buffer));
 });
 
-test("archive limits permit bounded content", () => {
-  assert.doesNotThrow(() => assertArchiveWithinLimits(fakeZip([0, 1024])));
+test("ZIP central directory rejects per-entry and total expanded byte limits", async () => {
+  const one = await makeZip();
+  const oversized = editCentralDirectory(one, (view, records) => {
+    view.setUint32(records[0] + 24, ARCHIVE_LIMITS.maxEntryBytes + 1, true);
+  });
+  assert.throws(() => assertArchiveWithinLimits(oversized), /oversized/);
+
+  const five = await makeZip({ a: "a", b: "b", c: "c", d: "d", e: "e" });
+  const inflated = editCentralDirectory(five, (view, records) => {
+    records.forEach(ptr => view.setUint32(ptr + 24, ARCHIVE_LIMITS.maxEntryBytes, true));
+  });
+  assert.throws(() => assertArchiveWithinLimits(inflated), /safety limit/);
 });
-test("archive limits reject excessive expanded bytes", () => {
-  assert.throws(() => assertArchiveWithinLimits(fakeZip([ARCHIVE_LIMITS.maxEntryBytes + 1])), /oversized/);
-  assert.throws(() => assertArchiveWithinLimits(fakeZip(Array(5).fill(ARCHIVE_LIMITS.maxEntryBytes))), /safety limit/);
+
+test("ZIP central directory rejects excessive entries, corruption and unsupported ZIP64", async () => {
+  const bytes = await makeZip();
+  const tooMany = editCentralDirectory(bytes, (view, _, eocd) => {
+    view.setUint16(eocd + 8, ARCHIVE_LIMITS.maxEntries + 1, true);
+    view.setUint16(eocd + 10, ARCHIVE_LIMITS.maxEntries + 1, true);
+  });
+  assert.throws(() => assertArchiveWithinLimits(tooMany), /too many/);
+  const zip64 = editCentralDirectory(bytes, (view, _, eocd) => {
+    view.setUint32(eocd + 16, 0xffffffff, true);
+  });
+  assert.throws(() => assertArchiveWithinLimits(zip64), /ZIP64/);
+  assert.throws(() => assertArchiveWithinLimits(new Uint8Array(10)), /ZIP central directory/);
 });
-test("archive limits reject excessive entries or missing size metadata", () => {
-  assert.throws(() => assertArchiveWithinLimits(fakeZip(Array(ARCHIVE_LIMITS.maxEntries + 1).fill(1))), /too many/);
-  assert.throws(() => assertArchiveWithinLimits({files: {a: {dir: false, _data: {}}}}), /unsupported/);
-});
+
 test("file URL handling respects Firefox principal restriction", () => {
   assert.equal(canLoadLocalFileFromReader("moz-extension://abc/reader.html"), false);
   assert.equal(canLoadLocalFileFromReader("chrome-extension://abc/reader.html"), true);
