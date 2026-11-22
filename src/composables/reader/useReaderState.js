@@ -14,6 +14,7 @@ export function useReaderState() {
   const spineItems = ref([]);
   const currentChapter = ref(null);
   const currentEpubUrl = ref(null);
+  const onlineLoadError = ref("");
   const currentBookKey = ref(null);
 
   const isDragging = ref(false);
@@ -67,6 +68,7 @@ export function useReaderState() {
     spineItems,
     currentChapter,
     currentEpubUrl,
+    onlineLoadError,
     currentBookKey,
     isDragging,
     isLoadingBook,
