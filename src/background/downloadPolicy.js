@@ -9,3 +9,23 @@ export function canLoadLocalFileFromReader(extensionPageUrl) {
     return false;
   }
 }
+
+/**
+ * Permit a manual browser download only from our reader page, and only for
+ * the exact HTTPS URL the reader was opened with. Opaque /download/<id> URLs
+ * are valid EPUB sources even when the path has no .epub extension.
+ * Content scripts on unrelated websites cannot invoke this capability.
+ */
+export function isAuthorizedReaderDownload({ sender, url, extensionId, readerUrl }) {
+  if (!url || typeof url !== "string" || sender?.id !== extensionId) return false;
+  try {
+    const target = new URL(url);
+    const source = new URL(sender.url || "");
+    const reader = new URL(readerUrl);
+    return target.protocol === "https:" && target.pathname.length < 2048 &&
+      source.origin === reader.origin && source.pathname === reader.pathname &&
+      source.searchParams.get("file") === url;
+  } catch {
+    return false;
+  }
+}
