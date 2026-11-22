@@ -23,8 +23,8 @@ export async function fetchWithRetry(url, retries = 2, {
       return await readResponse(response);
     } catch (error) {
       lastError = error;
-      const retryable = error?.httpStatus == null ||
-        RETRYABLE_HTTP_STATUS.has(error.httpStatus);
+      const retryable = error?.retryable !== false &&
+        (error?.httpStatus == null || RETRYABLE_HTTP_STATUS.has(error.httpStatus));
       if (attempt >= retries || !retryable) break;
       console.warn(`EPUB request attempt ${attempt + 1} failed, retrying`, error);
       onRetry({ attempt: attempt + 2, total: retries + 1, error });
