@@ -38,6 +38,8 @@
       @file-selected="loadEpub"
       @toggle-fullscreen="toggleFullscreen"
       @download-epub="downloadEpub"
+      :download-pending="downloadPending"
+      :download-delayed="downloadDelayed"
     />
 
     <bookshelf-sidebar :isOpen="bookshelfOpen" :books="shelfBooks" :isBookLoaded="isBookLoaded" @close="bookshelfOpen = false" @file-upload="file => loadEpub(file)" @book-select="openShelfBook" @book-deleted="refreshShelf" />
@@ -108,6 +110,9 @@ export default {
     const readerState = useReaderState();
     const settingsOpen = ref(false);
     const headerToolbar = ref(null);
+    const downloadPending = ref(false);
+    const downloadDelayed = ref(false);
+    let downloadDelayTimer = null;
     const {
       sidebarOpen, currentPage, totalPages, zoomLevel,
       fontSize, fontWeight, fontFamily, showInlineControls, settingsReady, bookContent, tableOfContents,
@@ -231,17 +236,45 @@ export default {
     };
 
     const downloadEpub = async () => {
-      if (!currentEpubUrl.value) {
+      if (downloadPending.value) return;
+      const url = currentEpubUrl.value;
+      if (!url) {
         addNotification({ message: 'No EPUB URL available for download', type: 'error' });
         return;
       }
+
+      downloadPending.value = true;
+      downloadDelayed.value = false;
+      // Do not animate the normal, near-instant browser handoff.
+      downloadDelayTimer = setTimeout(() => {
+        if (downloadPending.value) downloadDelayed.value = true;
+      }, 3000);
       try {
-        addNotification({ message: 'Downloading EPUB...', type: 'info' });
-        await downloadEpubFile(currentEpubUrl.value);
-        addNotification({ message: 'EPUB downloaded successfully!', type: 'success' });
+        const result = await downloadEpubFile(url);
+        if (result.status === 'waiting') {
+          addNotification({
+            message: 'The browser accepted the download but is still waiting for data. Check Downloads for its status.',
+            type: 'info',
+            timeout: 9000,
+          });
+        } else {
+          addNotification({
+            message: 'EPUB download started in your browser.',
+            type: 'success',
+          });
+        }
       } catch (error) {
-        console.error('Error downloading EPUB:', error);
-        addNotification({ message: 'Failed to download EPUB file', type: 'error' });
+        console.error('Browser EPUB download failed:', error);
+        addNotification({
+          message: `EPUB download failed: ${error?.message || 'network error'}`,
+          type: 'error',
+          timeout: 8000,
+        });
+      } finally {
+        clearTimeout(downloadDelayTimer);
+        downloadDelayTimer = null;
+        downloadPending.value = false;
+        downloadDelayed.value = false;
       }
     };
 
@@ -339,6 +372,7 @@ export default {
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
       readingPosition.dispose();
+      clearTimeout(downloadDelayTimer);
       cleanupObjectUrls();
     });
 
@@ -364,7 +398,7 @@ export default {
       handleDragEnter: interactions.handleDragEnter,
       handleDragLeave: interactions.handleDragLeave,
       handleDrop: interactions.handleDrop,
-      toggleFullscreen, downloadEpub, isDragging, spineItems
+      toggleFullscreen, downloadEpub, downloadPending, downloadDelayed, isDragging, spineItems
     };
   }
 };
