@@ -13,7 +13,7 @@ export function useReaderState() {
   const chapters = ref([]);
   const spineItems = ref([]);
   const currentChapter = ref(null);
-  const openBookFile = shallowRef(null);
+  const downloadableBook = shallowRef(null);
   const currentEpubUrl = ref(null);
   const onlineLoadError = ref("");
   const currentBookKey = ref(null);
@@ -48,7 +48,7 @@ export function useReaderState() {
 
   const resetReaderState = () => {
     cleanupObjectUrls();
-    openBookFile.value = null;
+    downloadableBook.value = null;
     chapters.value = [];
     tableOfContents.value = [];
     spineItems.value = [];
@@ -69,7 +69,7 @@ export function useReaderState() {
     chapters,
     spineItems,
     currentChapter,
-    openBookFile,
+    downloadableBook,
     currentEpubUrl,
     onlineLoadError,
     currentBookKey,

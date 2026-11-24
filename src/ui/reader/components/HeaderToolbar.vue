@@ -86,7 +86,7 @@
           
           <!-- Show these buttons only when a book is loaded -->
           <button
-            v-if="isBookLoaded"
+            v-if="canDownload"
             @click="handleDownload"
             class="download-book-button"
             :class="{ 'download-book-button--waiting': downloadDelayed }"
@@ -128,6 +128,7 @@ export default {
   props: {
     currentPage: { type: Number, default: 1 },
     totalPages: { type: Number, default: 0 },
+    canDownload: { type: Boolean, default: false },
     isBookLoaded: { type: Boolean, default: false },
     fontSize: { type: Number, default: 16 },
     zoomLevel: { type: Number, default: 1 },

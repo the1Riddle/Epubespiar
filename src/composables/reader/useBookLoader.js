@@ -26,7 +26,7 @@ export function useBookLoader({
     loadingMessage,
     loadingSubtitle,
     showLoadingProgress,
-    openBookFile,
+    downloadableBook,
     currentEpubUrl,
     onlineLoadError,
     currentBookKey,
@@ -50,7 +50,7 @@ export function useBookLoader({
     return `meta:${title}::${creator}`;
   };
 
-  const loadEpub = async (file, preserveUrl = false, storedId = null) => {
+  const loadEpub = async (file, { sourceUrl = null, intercepted = false, storedId = null } = {}) => {
     if (!file || busy) return false;
     busy = true;
     const shouldOpen = !!storedId || !chapters.value.length;
@@ -69,16 +69,14 @@ export function useBookLoader({
     showLoadingProgress.value = false;
 
     try {
-      if (!preserveUrl) {
-        currentEpubUrl.value = null;
-      }
+      if (shouldOpen) currentEpubUrl.value = sourceUrl;
 
       if (!validateFile(file, MAX_FILE_SIZE, ALLOWED_TYPES)) {
         throw new Error("Invalid EPUB file type or size");
       }
 
       loadingMessage.value = "Parsing book metadata...";
-      if (preserveUrl) onlineLoadError.value = "";
+      if (sourceUrl) onlineLoadError.value = "";
       const {
         metadata,
         cover,
@@ -98,7 +96,7 @@ export function useBookLoader({
 
         const id = "sha256:" + hash;
         const existing = await storage.getBook(id);
-        const onlineSource = preserveUrl ? currentEpubUrl.value : null;
+        const onlineSource = sourceUrl;
 
         await storage.saveBook({
           ...existing,
@@ -129,7 +127,7 @@ export function useBookLoader({
       // Only register new book resources after the previous book has been reset.
       urls.forEach(registerObjectUrl);
       urlsTransferred = true;
-      openBookFile.value = { file, title: metadata.title };
+      if (intercepted && sourceUrl) downloadableBook.value = { file, title: metadata.title };
       loadingMessage.value = "Rendering chapters...";
       chapters.value = chapterEntries;
       tableOfContents.value = sidebarToc;
@@ -147,7 +145,7 @@ export function useBookLoader({
     } catch (error) {
       if (urlsTransferred) resetReaderState();
       console.error("Failed to load EPUB:", error);
-      if (preserveUrl) {
+      if (sourceUrl) {
         onlineLoadError.value = error?.message || "The file could not be opened as an EPUB";
       }
 
@@ -166,7 +164,8 @@ export function useBookLoader({
 
   const loadBookFromUrl = async () => {
     try {
-      const fileParam = new URLSearchParams(window.location.search).get("file");
+      const params = new URLSearchParams(window.location.search);
+      const fileParam = params.get("file");
       if (!fileParam) return;
 
       // URLSearchParams.get() already decodes the query value.
@@ -191,7 +190,7 @@ export function useBookLoader({
 
       const opened = await loadEpub(
         new File([blob], "downloaded.epub", { type: "application/epub+zip" }),
-        true,
+        { sourceUrl: currentEpubUrl.value, intercepted: params.get("source") === "https-intercept" },
       );
       if (!opened && !onlineLoadError.value) {
         onlineLoadError.value = "The remote file could not be opened as an EPUB";

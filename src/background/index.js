@@ -86,12 +86,13 @@ async function openReaderTab(epubUrl = null, options = {}) {
 
     const readerURL = browser.runtime.getURL("reader.html");
     const instanceId = generateInstanceId();
-    const finalURL = epubUrl 
-      ? `${readerURL}?file=${encodeURIComponent(epubUrl)}&instance=${instanceId}`
-      : `${readerURL}?instance=${instanceId}`;
-    
+    const finalURL = new URL(readerURL);
+    finalURL.searchParams.set('instance', instanceId);
+    if (epubUrl) finalURL.searchParams.set('file', epubUrl);
+    if (options.interceptedHttps) finalURL.searchParams.set('source', 'https-intercept');
+
     // Always create a new tab with a unique instance ID
-    return await browser.tabs.create({ url: finalURL });
+    return await browser.tabs.create({ url: finalURL.href });
   } catch (error) {
     console.error('Error opening reader tab:', error);
     browser.runtime.sendMessage({
@@ -184,7 +185,7 @@ async function handlePotentialEpubDownload(downloadItem) {
       processedDownloads.add(downloadItem.id);
       // Create the reader before cancelling the original transfer. A tab
       // creation failure must not destroy the user's intended download.
-      await openReaderTab(downloadItem.url, { allowSafeNonEpubUrl: true });
+      await openReaderTab(downloadItem.url, { allowSafeNonEpubUrl: true, interceptedHttps: true });
       await browser.downloads.cancel(downloadItem.id);
       await browser.downloads.erase({ id: downloadItem.id });
     }

@@ -21,6 +21,7 @@
       :currentPage="currentPage"
       :totalPages="totalPages"
       :isBookLoaded="isBookLoaded"
+      :can-download="!!downloadableBook"
       :fontSize="fontSize"
       :zoomLevel="zoomLevel"
       :showInlineControls="showInlineControls"
@@ -52,7 +53,7 @@
         <p>{{ onlineLoadError }}</p>
         <div class="online-load-actions">
           <button type="button" @click="retryOnlineBook">Retry preview</button>
-          <button type="button" @click="downloadEpub" :disabled="downloadPending">
+          <button v-if="canRecoverDownload" type="button" @click="downloadEpub" :disabled="downloadPending">
             {{ downloadPending ? 'Waiting for browser…' : 'Download with browser' }}
           </button>
         </div>
@@ -129,7 +130,7 @@ export default {
     const {
       sidebarOpen, currentPage, totalPages, zoomLevel,
       fontSize, fontWeight, fontFamily, showInlineControls, settingsReady, bookContent, tableOfContents,
-      chapters, spineItems, currentChapter, openBookFile, currentEpubUrl, onlineLoadError,
+      chapters, spineItems, currentChapter, downloadableBook, currentEpubUrl, onlineLoadError,
       currentBookKey, isDragging, isLoadingBook,
       loadingTitle, loadingMessage, loadingSubtitle,
       showLoadingProgress, loadingProgress, isBookLoaded,
@@ -173,7 +174,7 @@ export default {
       try {
         const saved = await storage.getBook(book.id);
         if (!saved?.file) throw new Error('Missing book');
-        await loader.loadEpub(new File([saved.file], saved.file.name || 'book.epub', {type:'application/epub+zip'}), false, book.id);
+        await loader.loadEpub(new File([saved.file], saved.file.name || 'book.epub', {type:'application/epub+zip'}), { storedId: book.id });
       } catch { addNotification({message:'Could not open saved book', type:'error'}); }
     };
     const loader = useBookLoader({
@@ -182,7 +183,7 @@ export default {
       persistReadingPosition: readingPosition.persistReadingPosition,
       refs: {
         isLoadingBook, loadingTitle, loadingMessage,
-        loadingSubtitle, showLoadingProgress, openBookFile, currentEpubUrl,
+        loadingSubtitle, showLoadingProgress, downloadableBook, currentEpubUrl,
         currentBookKey, chapters, tableOfContents,
         currentChapter, spineItems, onlineLoadError
       },
@@ -249,14 +250,17 @@ export default {
       }
     };
 
+    const canRecoverDownload = computed(() => {
+      const params = new URLSearchParams(window.location.search);
+      return !isBookLoaded.value && !!onlineLoadError.value && !!currentEpubUrl.value &&
+        params.get('source') === 'https-intercept' && params.get('file') === currentEpubUrl.value;
+    });
+
     const downloadEpub = async () => {
       if (downloadPending.value) return;
       const url = currentEpubUrl.value;
-      const book = openBookFile.value;
-      if (!book && !url) {
-        addNotification({ message: 'No EPUB URL available for download', type: 'error' });
-        return;
-      }
+      const book = downloadableBook.value;
+      if (!book && !canRecoverDownload.value) return;
 
       downloadPending.value = true;
       downloadDelayed.value = false;
@@ -398,6 +402,7 @@ export default {
       settingsOpen, fontWeight, fontFamily, showInlineControls, currentChapterTitle,
       zoomLevel, fontSize, bookContent, tableOfContents,
       currentChapter, chapters, currentEpubUrl, onlineLoadError,
+      downloadableBook, canRecoverDownload,
       retryOnlineBook: loader.loadBookFromUrl,
       isTrustedObjectUrl,
       isLoadingBook, loadingTitle, loadingMessage,

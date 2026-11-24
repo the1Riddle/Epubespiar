@@ -2,12 +2,12 @@
 
 ## Browser download UX
 
-After a book opens, **Download EPUB** exports the same parsed File through
+After an HTTPS download is intercepted and its book opens, **Download EPUB** exports the same parsed File through
 the browser downloads API. Its suggested filename comes from the book title
-and ends in `.epub`. Downloading works offline and also works for a book
-reopened from the shelf. It does not make another request to the publisher.
+and ends in `.epub`. The validated copy can be saved offline. Local files, reader-page drops,
+and books reopened from the shelf have no download action.
 
-When a preview fails, no validated book is available. **Download with browser**
+When an intercepted HTTPS preview fails, no validated book is available. **Download with browser**
 requests the original HTTPS resource and the server determines its contents and name.
 
 The background verifies that the message comes from `reader.html` and that

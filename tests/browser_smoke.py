@@ -105,11 +105,15 @@ def main():
                 errors = []
                 page.on("pageerror", lambda exc: errors.append(str(exc)))
                 page.goto(f"chrome-extension://{extension_id}/reader.html")
-                page.locator("input[type=file]").first.set_input_files(
-                    str(book), timeout=15000
-                )
+                page.locator(".epub-reader").evaluate("""(reader, bytes) => {
+                  const dataTransfer = new DataTransfer();
+                  dataTransfer.items.add(new File([new Uint8Array(bytes)], 'local.epub',
+                    {type: 'application/epub+zip'}));
+                  reader.dispatchEvent(new DragEvent('drop', {bubbles: true, dataTransfer}));
+                }""", list(book.read_bytes()))
                 host = page.locator(".chapter-content-host").first
                 host.wait_for(state="visible", timeout=25000)
+                assert page.locator(".download-book-button").count() == 0, "Local drop offered a download"
                 content = host.evaluate("(el) => el.shadowRoot?.innerHTML || ''")
                 assert "Reader security fixture" in content, content[:800]
                 assert "<script" not in content.lower(), "Script survived EPUB sanitization"

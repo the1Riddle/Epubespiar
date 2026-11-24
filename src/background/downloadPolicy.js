@@ -26,6 +26,7 @@ export function isAuthorizedReaderDownload({ sender, url, extensionId, readerUrl
     return target.protocol === "https:" && target.pathname.length < 2048 &&
       source.protocol === reader.protocol && source.host === reader.host &&
       source.pathname === reader.pathname &&
+      source.searchParams.get("source") === "https-intercept" &&
       source.searchParams.get("file") === url;
   } catch {
     return false;

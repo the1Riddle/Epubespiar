@@ -1,4 +1,4 @@
-"""Round-trip an EPUB in installed Firefox and in the Vite reader UI."""
+"""Check download eligibility in installed Firefox and in the Vite reader UI."""
 import json
 import shutil
 import ssl
@@ -7,7 +7,7 @@ import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, parse_qs
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -28,6 +28,19 @@ def main():
 
         class Source(BaseHTTPRequestHandler):
             def do_GET(self):
+                if self.path == "/":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(b'<a href="/intercept.epub">Download EPUB</a>')
+                    return
+                if self.path == "/intercept.epub":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/epub+zip")
+                    self.send_header("Content-Disposition", 'attachment; filename="intercept.epub"')
+                    self.end_headers()
+                    self.wfile.write(original)
+                    return
                 if self.path != "/example.php":
                     self.send_error(404)
                     return
@@ -69,7 +82,7 @@ def main():
             wait = WebDriverWait(driver, 30)
             driver.install_addon(archive, temporary=True)
             url = f"https://localhost:{server.server_port}/example.php"
-            driver.get(f"moz-extension://{uuid}/reader.html?file={quote(url, safe='')}")
+            driver.get(f"moz-extension://{uuid}/reader.html?file={quote(url, safe='')}&source=https-intercept")
             save = (By.CSS_SELECTOR, ".download-book-button")
 
             def verify_save():
@@ -83,10 +96,27 @@ def main():
 
             verify_save()
             assert len(requests) == 1, requests
+            # Reopen the very same stored book, in the same reader tab.
+            driver.find_element(By.CSS_SELECTOR, '[aria-label="Open Bookshelf"]').click()
+            wait.until(conditions.element_to_be_clickable((By.CSS_SELECTOR, ".book-info"))).click()
+            wait.until(lambda d: not d.find_elements(*save))
+            wait.until(conditions.visibility_of_element_located((By.CSS_SELECTOR, ".chapter-content-host")))
+
+            # Exercise the real background listener and verify its reader handoff.
+            driver.execute_async_script("browser.storage.local.set({interceptDownloads:true}).then(arguments[0])")
+            before = set(driver.window_handles)
+            driver.get(f"https://localhost:{server.server_port}/")
+            driver.find_element(By.LINK_TEXT, "Download EPUB").click()
+            handle = wait.until(lambda d: next(iter(set(d.window_handles) - before), None))
+            driver.switch_to.window(handle)
+            wait.until(conditions.element_to_be_clickable(save))
+            assert parse_qs(urlsplit(driver.current_url).query)["source"] == ["https-intercept"]
+
             driver.get("http://localhost:8080/")
             wait.until(conditions.presence_of_element_located((By.CSS_SELECTOR, "input[type=file]"))).send_keys(str(source))
-            verify_save()
-            print("PASS: one-use Firefox extension download and localhost reader export")
+            wait.until(conditions.visibility_of_element_located((By.CSS_SELECTOR, ".chapter-content-host")))
+            assert not driver.find_elements(*save), "Picker-opened book offered a download"
+            print("PASS: intercepted HTTPS book can be saved; shelf and picker opens have no download")
 
 
 if __name__ == "__main__":

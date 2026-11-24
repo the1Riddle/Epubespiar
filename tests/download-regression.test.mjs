@@ -84,10 +84,13 @@ test("opaque download endpoints are allowed only from the matching extension rea
   const readerUrl = "chrome-extension://epubespiar-test/reader.html";
   const sender = {
     id: "epubespiar-test",
-    url: `${readerUrl}?file=${encodeURIComponent(url)}&instance=book`,
+    url: `${readerUrl}?file=${encodeURIComponent(url)}&instance=book&source=https-intercept`,
   };
   const request = { sender, url, readerUrl, extensionId: "epubespiar-test" };
   assert.equal(isAuthorizedReaderDownload(request), true);
+  assert.equal(isAuthorizedReaderDownload({
+    ...request, sender: { ...sender, url: sender.url.replace("&source=https-intercept", "") },
+  }), false);
   assert.equal(isAuthorizedReaderDownload({
     ...request,
     url: "https://evil.test/payload",
