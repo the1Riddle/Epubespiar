@@ -11,6 +11,7 @@ from urllib.parse import quote
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.support import expected_conditions as conditions
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -27,12 +28,6 @@ def main():
 
         class Source(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path == "/":
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html")
-                    self.end_headers()
-                    self.wfile.write(f'<a href="{reader_url}">Read book</a>'.encode())
-                    return
                 if self.path != "/example.php":
                     self.send_error(404)
                     return
@@ -68,17 +63,21 @@ def main():
         options.set_preference("browser.download.useDownloadDir", True)
         options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/epub+zip")
         output = root / "Security fixture.epub"
-        with server, webdriver.Firefox(options=options) as driver:
+        # WebDriver requires explicit test-session access to extension pages.
+        service = Service(service_args=["--allow-system-access"])
+        with server, webdriver.Firefox(options=options, service=service) as driver:
             wait = WebDriverWait(driver, 30)
             driver.install_addon(archive, temporary=True)
             url = f"https://localhost:{server.server_port}/example.php"
-            reader_url = f"moz-extension://{uuid}/reader.html?file={quote(url, safe='')}"
-            driver.get(f"https://localhost:{server.server_port}/")
-            driver.find_element(By.LINK_TEXT, "Read book").click()
+            driver.get(f"moz-extension://{uuid}/reader.html?file={quote(url, safe='')}")
             save = (By.CSS_SELECTOR, ".download-book-button")
 
             def verify_save():
-                wait.until(conditions.element_to_be_clickable(save)).click()
+                try:
+                    wait.until(conditions.element_to_be_clickable(save)).click()
+                except Exception:
+                    print("Reader state:", driver.current_url, driver.find_element(By.TAG_NAME, "body").text[:1500])
+                    raise
                 wait.until(lambda _: output.exists() and output.read_bytes() == original)
                 output.unlink()
 
