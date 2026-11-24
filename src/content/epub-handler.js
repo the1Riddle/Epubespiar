@@ -1,5 +1,5 @@
 import browser from 'webextension-polyfill';
-import { validateURL, sanitizeHTML } from '../utils/security';
+
 
 let isDraggingEpub = false;
 

@@ -14,6 +14,7 @@ export function useReaderState() {
   const spineItems = ref([]);
   const currentChapter = ref(null);
   const currentEpubUrl = ref(null);
+  const onlineLoadError = ref("");
   const currentBookKey = ref(null);
 
   const isDragging = ref(false);
@@ -27,11 +28,17 @@ export function useReaderState() {
   const createdObjectUrls = new Set();
   const isBookLoaded = computed(() => chapters.value.length > 0);
 
-  const createTrackedObjectUrl = (blob) => {
-    const url = URL.createObjectURL(blob);
+  const registerObjectUrl = (url) => {
     createdObjectUrls.add(url);
     return url;
   };
+
+  const createTrackedObjectUrl = (blob) =>
+    registerObjectUrl(URL.createObjectURL(blob));
+
+  // Only object URLs created by our ZIP extractor can be kept by the
+  // EPUB HTML sanitizer. A string supplied by the book is never trusted.
+  const isTrustedObjectUrl = (url) => createdObjectUrls.has(url);
 
   const cleanupObjectUrls = () => {
     createdObjectUrls.forEach((url) => URL.revokeObjectURL(url));
@@ -61,6 +68,7 @@ export function useReaderState() {
     spineItems,
     currentChapter,
     currentEpubUrl,
+    onlineLoadError,
     currentBookKey,
     isDragging,
     isLoadingBook,
@@ -71,6 +79,8 @@ export function useReaderState() {
     loadingProgress,
     isBookLoaded,
     createTrackedObjectUrl,
+    registerObjectUrl,
+    isTrustedObjectUrl,
     cleanupObjectUrls,
     resetReaderState,
   };

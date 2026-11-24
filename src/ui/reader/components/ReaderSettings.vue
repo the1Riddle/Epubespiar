@@ -5,6 +5,7 @@
       class="reader-settings"
       aria-labelledby="reader-settings-title"
       @close="emit('close')"
+      @cancel.prevent
       @click="closeOnBackdrop"
       @keydown.stop
       @keyup.stop

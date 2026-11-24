@@ -6,22 +6,29 @@ These shortcuts work when the Epubespiar reader page has keyboard focus.
 
 | Shortcut | Action | Availability |
 | --- | --- | --- |
-| Ctrl + F9 | Open reader settings | Book open, library closed |
-| Ctrl + Home | Open the library | Including when no book is open |
+| Ctrl + F9 | Toggle reader settings open/closed | Book open, library closed; works again inside settings |
+| Ctrl + Home | Toggle the library open/closed | Also works when no book is open |
 | Ctrl + End | Close the current book and show the library | Book open |
 | Ctrl + Insert | Open the EPUB file picker | Including when a book is already open |
-| Ctrl + [ or Ctrl + ] | Open the table of contents, closing the library if open | Book open |
+| Ctrl + [ or Ctrl + ] | Toggle the table of contents open/closed, closing the library when opening | Book open |
 | Alt + , | Decrease reader zoom by 10 percentage points | Book open, library closed |
 | Alt + . | Increase reader zoom by 10 percentage points | Book open, library closed |
 | Alt + / | Reset reader zoom to 100% | Book open, library closed |
 | Alt + - | Decrease font size by 2px | Book open, library closed |
 | Alt + = | Increase font size by 2px | Book open, library closed |
 | Alt + 0 | Reset font size to 16px | Book open, library closed |
-| Esc | Close the table of contents | TOC open, library closed |
+| Esc | Exit fullscreen **only** | Fullscreen active |
 
 Closing a book does **not** close the browser tab or delete the book from the
-library. Opening the library with Ctrl + Home never toggles it closed. Both TOC
-shortcuts open it rather than toggle it; pressing either again leaves it open.
+library. Use the **same shortcut again** to close library, table of contents, or
+settings. Both Ctrl + [ and Ctrl + ] control the same TOC toggle: pressing
+either one while the TOC is visible closes it.
+
+The file picker (Ctrl + Insert), closing a book (Ctrl + End), and zoom/font
+adjustments are one-shot actions, not panels that can be toggled. Esc does not
+close any reader panel or settings dialog; use its matching shortcut or the
+visible close control. The browser may also use Esc to leave its own fullscreen
+mode.
 
 ## Zoom and font size
 
@@ -42,15 +49,20 @@ and resetting font size does not reset zoom, font family, or font weight.
 
 ## Focus and conflicts
 
-- Reader shortcuts pause while a book is loading or a settings or library dialog is
-  displayed. Dialogs keep their own keyboard behavior, including native Esc handling.
-- Shortcuts do not run in inputs, selects, text areas, or editable content, or
-  during input-method composition. AltGraph combinations are left alone.
+- While a book is loading or a nested collection dialog is open, panel
+  shortcuts are paused. While reader settings is open, Ctrl + F9 still closes it
+  from inside the dialog. Other reader shortcuts are blocked there.
+- Shortcuts normally do not run in inputs, selects, text areas, or editable
+  content. The active panel's *own* toggle shortcut is the exception: pressing
+  Ctrl + Home in the library search field, or Ctrl + F9 inside settings, still
+  closes that panel. Input-method composition and AltGraph combinations remain
+  protected.
 - Ctrl + Insert keeps its normal **Copy** behavior when text is selected.
 - Browser zoom shortcuts, including Ctrl + 0, Ctrl + - and Ctrl + +, are unchanged.
-- Open the TOC using Ctrl + [ / Ctrl + ] or its existing toolbar control;
-  Esc closes it. The library retains its own Esc behavior for its nested
-  collections panel and library sidebar.
+- Open or close the TOC using Ctrl + [ / Ctrl + ] or its toolbar control.
+  Esc is reserved for fullscreen exit and does **not** close the library,
+  collections sidebar, TOC, or settings dialog. Use visible close/backdrop
+  controls or each panel's toggle shortcut instead.
 - Existing unmodified left/right arrow navigation remains available while reading.
 - Bindings use the key reported by your keyboard layout, with the exact modifiers
   listed above. Ctrl is not automatically replaced with Command on macOS.
@@ -60,7 +72,7 @@ and resetting font size does not reset zoom, font family, or font weight.
 
 ## Maintaining the shortcuts
 
-- [Shortcut bindings](../src/composables/reader/useReaderShortcuts.js) map keys and exact modifiers to named actions. Set `repeat` for held-key adjustments and `preserveSelection` to let Copy take precedence when text is selected.
+- [Shortcut bindings](../src/composables/reader/useReaderShortcuts.js) map keys and exact modifiers to named actions. Set `repeat` for held-key adjustments and `preserveSelection` to let Copy take precedence when text is selected. The listener runs in capture phase so a panel shortcut can close settings even when its dialog stops keyboard-event bubbling.
 - [Reader actions](../src/ui/reader/App.vue) define what each shortcut does and when it is available. The dispatcher leaves the event alone when the action is missing or disabled. It attaches the listener when the reader mounts and removes it when the reader unmounts.
 - [Reader settings](../src/composables/reader/useReaderSettings.js) define the defaults and limits for zoom and font size. Check the toolbar and settings controls when changing those ranges.
 

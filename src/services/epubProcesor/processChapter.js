@@ -1,4 +1,21 @@
-import { resolvePath } from "./pathUtils.js";
+import { resolveArchivePath } from "./pathUtils.js";
+
+// JSZip's async('blob') creates an untyped Blob. Give extracted images their
+// MIME type so Chromium and Firefox can decode them consistently from blob: URLs.
+const IMAGE_MIME_TYPES = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  avif: "image/avif",
+  svg: "image/svg+xml"
+};
+
+function imageBlobFromBytes(bytes, path) {
+  const ext = path.split("?")[0].split(".").pop()?.toLowerCase();
+  return new Blob([bytes], { type: IMAGE_MIME_TYPES[ext] || "application/octet-stream" });
+}
 
 const stripFontFaceRules = (cssText) =>
   cssText.replace(/@font-face\s*{[\s\S]*?}/gi, "");
@@ -26,13 +43,13 @@ const processCssUrls = async (
     )
       continue;
 
-    const resolved = resolvePath(cssBasePath, original);
+    const resolved = resolveArchivePath(cssBasePath, original, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
     try {
-      const blob = await file.async("blob");
-      const blobUrl = createTrackedObjectUrl(blob);
+      const bytes = await file.async("uint8array");
+      const blobUrl = createTrackedObjectUrl(imageBlobFromBytes(bytes, resolved));
       updated = updated.replace(match[0], `url('${blobUrl}')`);
     } catch (error) {
       console.warn("Unable to process CSS asset:", resolved, error);
@@ -61,7 +78,7 @@ export const parseAndProcessChapter = async (
   const links = doc.querySelectorAll("link[rel='stylesheet']");
   for (const link of Array.from(links)) {
     const href = link.getAttribute("href") || "";
-    const resolved = resolvePath(basePath, href);
+    const resolved = resolveArchivePath(basePath, href, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
@@ -105,13 +122,13 @@ export const parseAndProcessChapter = async (
     const src = image.getAttribute("src") || "";
     if (!src || src.startsWith("data:") || src.startsWith("blob:")) continue;
 
-    const resolved = resolvePath(basePath, src);
+    const resolved = resolveArchivePath(basePath, src, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
     try {
-      const blob = await file.async("blob");
-      image.setAttribute("src", createTrackedObjectUrl(blob));
+      const bytes = await file.async("uint8array");
+      image.setAttribute("src", createTrackedObjectUrl(imageBlobFromBytes(bytes, resolved)));
     } catch (error) {
       console.warn("Unable to process image:", resolved, error);
     }
@@ -123,13 +140,13 @@ export const parseAndProcessChapter = async (
       image.getAttribute("xlink:href") || image.getAttribute("href") || "";
     if (!href || href.startsWith("data:") || href.startsWith("blob:")) continue;
 
-    const resolved = resolvePath(basePath, href);
+    const resolved = resolveArchivePath(basePath, href, zip.files);
     const file = zip.file(resolved);
     if (!file) continue;
 
     try {
-      const blob = await file.async("blob");
-      const blobUrl = createTrackedObjectUrl(blob);
+      const bytes = await file.async("uint8array");
+      const blobUrl = createTrackedObjectUrl(imageBlobFromBytes(bytes, resolved));
       image.setAttribute("href", blobUrl);
       image.removeAttribute("xlink:href");
     } catch (error) {

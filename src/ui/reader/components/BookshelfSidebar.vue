@@ -454,25 +454,6 @@ export default {
       return d.toLocaleDateString();
     };
 
-    // Close on ESC key
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        if (showCollections.value && isMobile.value) {
-          showCollections.value = false;
-        } else if (props.isOpen) {
-          handleClose();
-        }
-      }
-    };
-
-    watch(() => props.isOpen, (isOpen) => {
-      if (isOpen) {
-        document.addEventListener('keydown', handleKeyDown);
-      } else {
-        document.removeEventListener('keydown', handleKeyDown);
-      }
-    });
-
     watch(showNewCollectionDialog, (isOpen) => {
       if (isOpen) {
         // Focus the input field when dialog opens
