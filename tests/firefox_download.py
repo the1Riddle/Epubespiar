@@ -27,6 +27,12 @@ def main():
 
         class Source(BaseHTTPRequestHandler):
             def do_GET(self):
+                if self.path == "/":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(f'<a href="{reader_url}">Read book</a>'.encode())
+                    return
                 if self.path != "/example.php":
                     self.send_error(404)
                     return
@@ -66,7 +72,9 @@ def main():
             wait = WebDriverWait(driver, 30)
             driver.install_addon(archive, temporary=True)
             url = f"https://localhost:{server.server_port}/example.php"
-            driver.get(f"moz-extension://{uuid}/reader.html?file={quote(url, safe='')}")
+            reader_url = f"moz-extension://{uuid}/reader.html?file={quote(url, safe='')}"
+            driver.get(f"https://localhost:{server.server_port}/")
+            driver.find_element(By.LINK_TEXT, "Read book").click()
             save = (By.CSS_SELECTOR, ".download-book-button")
 
             def verify_save():
