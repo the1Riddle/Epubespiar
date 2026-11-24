@@ -25,6 +25,9 @@ for (const target of ["chrome", "firefox"]) {
   assert(manifest.permissions.includes("downloads"), "downloads permission required");
   if (target === "chrome") {
     assert.equal(manifest.background.type, "module");
+    assert.equal(manifest.minimum_chrome_version, "146");
+  } else {
+    assert.equal(manifest.browser_specific_settings.gecko.strict_min_version, "148.0");
   }
   console.log(`${target}: verified ${paths.length} manifest assets`);
 }

@@ -26,6 +26,8 @@ jobs:
       - name: Install Playwright (CI-only)
         run: |
           python -m pip install --upgrade playwright
-          python -m playwright install --with-deps chromium
+          python -m playwright install --with-deps chromium firefox
       - name: Test packaged Chromium EPUB reader against hostile XHTML
         run: python tests/browser_smoke.py
+      - name: Verify native chapter rendering in Firefox
+        run: python tests/firefox_chapter.py

@@ -121,6 +121,8 @@ Both paths end by opening the extension reader with:
 
 ## Browser Compatibility
 
+The reader requires Chromium 146+ (including Chrome and Edge) or Firefox 148+ for native EPUB chapter sanitization.
+
 For Firefox local-file restrictions, supported fallbacks, and the Mozilla upstream issues, see [Firefox local-file support](docs/FIREFOX_LOCAL_FILES.md).
 
 - [Chrome](https://chromewebstore.google.com/detail/epubespiar/jpebliijmpohifmgjcpfmhfjjeingoho)/[Edge](https://microsoftedge.microsoft.com/addons/detail/mnlangghpjdaaecdfagjleijiahpaaei?hl=vi): Full support

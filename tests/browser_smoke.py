@@ -29,8 +29,9 @@ def fixture_png():
 def write_epub(path: Path, malicious: bool = False):
     chapter = """<?xml version="1.0" encoding="utf-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
-  <head><title>Safe Chapter</title></head>
+  <head><title>Safe Chapter</title><style media="print">.author { color: purple }</style></head>
   <body><h1>Reader security fixture</h1><p>Hello, Epubespiar.</p>
+  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><image id="svg-cover" href="cover.png" width="10" height="10"/></svg>
   <img id="test-cover" src="cover.png" alt="cover"/>
   <img id="test-illustration" src="images/illustration.png" alt="illustration"/>
   <img id="encoded-cover" src="images/cover%20with%20spaces.png#image" alt="encoded cover"/>
@@ -133,6 +134,11 @@ def main():
                   el.shadowRoot.querySelector('#untrusted-blob')?.getAttribute('src')
                 """)
                 assert not untrusted, "Arbitrary EPUB-supplied blob URL survived sanitizer"
+                assert host.evaluate("""el => {
+                  const root = el.shadowRoot;
+                  return root.querySelector('style[media="print"]')?.textContent.includes('.author')
+                    && root.querySelector('svg image')?.getAttribute('href')?.startsWith('blob:');
+                }"""), "Chapter lost print CSS or an archive-backed SVG illustration"
                 saved_cover = page.evaluate("""async () => {
                   const db = await new Promise((resolve, reject) => {
                     const request = indexedDB.open('EpubReaderDB');

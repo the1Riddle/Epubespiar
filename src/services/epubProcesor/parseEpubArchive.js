@@ -103,11 +103,11 @@ export async function parseEpubArchive(file, createTrackedObjectUrl) {
         createTrackedObjectUrl,
       );
       const doc = new DOMParser().parseFromString(content, "text/html");
-      const stylesHtml = Array.from(
-        doc.querySelectorAll('style, link[rel="stylesheet"]'),
-      )
-        .map((style) => style.outerHTML)
-        .join("");
+      const styles = Array.from(doc.querySelectorAll("style"), node => {
+        const sheet = { css: node.textContent, media: node.media };
+        node.remove();
+        return sheet;
+      });
       const bodyNode = doc.querySelector("body");
       const bodyHtml = bodyNode ? bodyNode.innerHTML : content;
       const chapterFileName = spineItem.href.split("/").pop() || spineItem.href;
@@ -119,7 +119,7 @@ export async function parseEpubArchive(file, createTrackedObjectUrl) {
         href: spineItem.href,
         title: matchingToc?.label || `Section ${index + 1}`,
         content,
-        styles: stylesHtml,
+        styles,
         body: bodyHtml,
       });
     } catch (error) {

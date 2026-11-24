@@ -2,6 +2,7 @@ import baseManifest from './manifest.config.js';
 
 const chromeManifest = {
   ...baseManifest,
+  minimum_chrome_version: "146",
   offline_enabled: true,
   author: {
     name: "rezzcode",

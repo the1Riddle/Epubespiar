@@ -1,22 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-/**
- * Precisely two known generated sinks: Vue static template insertion and
- * DOMPurify's detached-document fallback. Neither exception applies unless
- * the bundled source around the reported line/column proves its origin.
- */
 const KNOWN_GENERATED_SINKS = Object.freeze({
   "src/helper-plugin-vue_export-helper.js": {
     name: "Vue static-template insertion",
     verify: snippet => snippet.includes("insertStaticContent(") &&
       snippet.includes(".innerHTML=") && snippet.includes(".content"),
-  },
-  "src/reader.js": {
-    name: "DOMPurify detached-document parser fallback",
-    verify: snippet => snippet.includes(".parseFromString(") &&
-      snippet.includes(".createDocument(") &&
-      snippet.includes(".documentElement.innerHTML="),
   },
 });
 const normalizeFile = file => String(file || "").replace(/\\/g, "/").replace(/^\.\//, "");
@@ -25,8 +14,7 @@ const normalizeFile = file => String(file || "").replace(/\\/g, "/").replace(/^\
 /**
  * Strict CI gate for addons-linter JSON output.
  *
- * Accepts at most one verified generated-code warning from each of Vue
- * and DOMPurify. Never blanket-ignore warning codes or skip files.
+ * Accepts at most one verified generated-code warning from Vue. Never blanket-ignore warning codes or skip files.
  */
 export function checkFirefoxLint(report, cliExitCode = 0, {
   readBuiltSource = file => readFileSync(resolve("dist/firefox", file), "utf8"),

@@ -33,26 +33,13 @@ private environment file or expose a secret's value in job logs.
 
 - **Every linter error fails CI.**
 - **Every unexpected warning fails CI.**
-- At most one warning per exact generated file can be accepted for two reviewed
-  third-party implementation details, and only after checking the reported
-  location against the bundled source:
-  - `src/helper-plugin-vue_export-helper.js`: Vue's
-    `insertStaticContent` static-template insertion.
-  - `src/reader.js`: DOMPurify's fallback parser using a detached document
-    before it sanitizes markup.
-- Both exceptions require the exact code `UNSAFE_VAR_ASSIGNMENT`, the message
-  `Unsafe assignment to innerHTML`, the expected file, a valid line/column,
-  and the expected library-specific instructions around that location. A
-  second warning from either file, a shifted or changed sink, or another type
-  of unsafe assignment fails.
-- Notices are informational; invalid JSON, missing diagnostic lists, an
-  inconsistent summary or a failed linter invocation also fails CI.
+- The gate accepts one Vue static-template warning in
+  `src/helper-plugin-vue_export-helper.js` after checking the diagnostic code,
+  message, location and surrounding generated instructions.
+- Every warning in the reader bundle fails CI.
+- Notices are informational. Invalid reports and failed linter runs fail CI.
 
-**Security note:** The Vue and DOMPurify exceptions are *not* an exemption for
-reader code assigning untrusted EPUB HTML to `innerHTML`. They must be reviewed
-again when the build output or dependencies change. Untrusted EPUB chapter
-markup is sanitized and appended as a DOM fragment in `ChapterContent.vue`;
-that protection is separate from the generated-library warning classification.
+EPUB chapter markup passes through the browser's HTML Sanitizer API.
 
 See [the gate tests](../tests/addons-linter-gate.test.mjs) for positive and
 negative cases. For changes to this allowlist, inspect the actual packaged JS

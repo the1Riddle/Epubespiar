@@ -234,13 +234,13 @@ export default {
       if (fragment) {
         setTimeout(() => {
           let fragmentEl = chapterEl.querySelector(`#${CSS.escape(fragment)}`)
-            || chapterEl.querySelector(`[name="${fragment}"]`);
+            || chapterEl.querySelector(`[name="${CSS.escape(fragment)}"]`);
           if (!fragmentEl) {
             const shadowHosts = chapterEl.querySelectorAll('[data-shadow-host="chapter-content"]');
             for (const host of Array.from(shadowHosts)) {
               const shadowRoot = host.shadowRoot;
               fragmentEl = shadowRoot?.querySelector(`#${CSS.escape(fragment)}`)
-                || shadowRoot?.querySelector(`[name="${fragment}"]`);
+                || shadowRoot?.querySelector(`[name="${CSS.escape(fragment)}"]`);
               if (fragmentEl) break;
             }
           }
