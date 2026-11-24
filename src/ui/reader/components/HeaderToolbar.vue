@@ -86,7 +86,7 @@
           
           <!-- Show these buttons only when a book is loaded -->
           <button
-            v-if="showDownloadButton"
+            v-if="isBookLoaded"
             @click="handleDownload"
             class="download-book-button"
             :class="{ 'download-book-button--waiting': downloadDelayed }"
@@ -133,7 +133,6 @@ export default {
     zoomLevel: { type: Number, default: 1 },
     currentChapterTitle: { type: String, default: '' },
     showInlineControls: { type: Boolean, default: true },
-    epubUrl: { type: String, default: null },
     downloadPending: { type: Boolean, default: false },
     downloadDelayed: { type: Boolean, default: false }
   },
@@ -158,11 +157,6 @@ export default {
     const searchResults = ref([]);
     const searchInput = ref(null);
     
-
-    // Check if download button should be shown (book loaded from HTTPS)
-    const showDownloadButton = computed(() => {
-      return props.isBookLoaded && props.epubUrl && props.epubUrl.startsWith('https://');
-    });
 
     // Reflect current zoom in dropdown using nearest preset value
     const zoomSelectValue = computed(() => {
@@ -247,7 +241,7 @@ export default {
 
     return {
       fileInput, searchOpen, searchQuery, searchResults, searchInput,
-      zoomSelectValue, showDownloadButton,
+      zoomSelectValue,
       onZoomChange, onFontSizeChange, triggerFileInput, onFileSelected,
       toggleSearch, toggleFullscreen, handleDownload, performSearch, goToSearchResult
     };

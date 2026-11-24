@@ -2,10 +2,13 @@
 
 ## Browser download UX
 
-The reader's download button now asks the background extension to call the
-browser's native `downloads.download()` API for the **original HTTPS source**.
-It does not fetch the entire book into a JavaScript Blob, use an artificial
-blob filename, or assert completion before the browser has received data.
+After a book opens, **Download EPUB** exports the same parsed File through
+the browser downloads API. Its suggested filename comes from the book title
+and ends in `.epub`. Downloading works offline and also works for a book
+reopened from the shelf. It does not make another request to the publisher.
+
+When a preview fails, no validated book is available. **Download with browser**
+requests the original HTTPS resource and the server determines its contents and name.
 
 The background verifies that the message comes from `reader.html` and that
 its `file` query value is exactly the requested source URL. This permits

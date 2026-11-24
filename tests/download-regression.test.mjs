@@ -101,3 +101,12 @@ test("opaque download endpoints are allowed only from the matching extension rea
     url: "http://example.test/download/99021521",
   }), false);
 });
+
+test("EPUB download filenames keep Unicode and form one portable path component", async () => {
+  const { epubFilename } = await import("../src/services/epubProcesor/downloadEpub.js");
+  assert.equal(epubFilename("Édition.epub"), "Édition.epub");
+  assert.equal(epubFilename("CON"), "_CON.epub");
+  assert.equal(epubFilename("..."), "Book.epub");
+  assert.equal(epubFilename("A/B:C"), "A_B_C.epub");
+  assert.ok(Buffer.byteLength(epubFilename("📚".repeat(100))) <= 255);
+});

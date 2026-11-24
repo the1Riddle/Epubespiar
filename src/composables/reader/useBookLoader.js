@@ -26,6 +26,7 @@ export function useBookLoader({
     loadingMessage,
     loadingSubtitle,
     showLoadingProgress,
+    openBookFile,
     currentEpubUrl,
     onlineLoadError,
     currentBookKey,
@@ -128,6 +129,7 @@ export function useBookLoader({
       // Only register new book resources after the previous book has been reset.
       urls.forEach(registerObjectUrl);
       urlsTransferred = true;
+      openBookFile.value = { file, title: metadata.title };
       loadingMessage.value = "Rendering chapters...";
       chapters.value = chapterEntries;
       tableOfContents.value = sidebarToc;

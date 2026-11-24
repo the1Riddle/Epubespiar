@@ -26,7 +26,6 @@
       :showInlineControls="showInlineControls"
       :currentChapterTitle="currentChapterTitle"
       @toggle-settings="toggleSettings"
-      :epubUrl="currentEpubUrl"
       @toggle-bookshelf="toggleBookshelf"
       @toggle-sidebar="toggleSidebar"
       @scroll-up="scrollUp"
@@ -110,7 +109,7 @@ import { useReadingPosition } from '../../composables/reader/useReadingPosition.
 import { useReaderState } from '../../composables/reader/useReaderState.js';
 import { readerDefaults, readerLimits } from '../../composables/reader/useReaderSettings.js';
 import { isReaderTypingEvent, useReaderShortcuts } from '../../composables/reader/useReaderShortcuts.js';
-import { downloadEpub as downloadEpubFile } from '../../services/epubProcesor/downloadEpub.js';
+import { saveOpenBook, downloadOriginalSource } from '../../services/epubProcesor/downloadEpub.js';
 
 export default {
   components: {
@@ -130,7 +129,7 @@ export default {
     const {
       sidebarOpen, currentPage, totalPages, zoomLevel,
       fontSize, fontWeight, fontFamily, showInlineControls, settingsReady, bookContent, tableOfContents,
-      chapters, spineItems, currentChapter, currentEpubUrl, onlineLoadError,
+      chapters, spineItems, currentChapter, openBookFile, currentEpubUrl, onlineLoadError,
       currentBookKey, isDragging, isLoadingBook,
       loadingTitle, loadingMessage, loadingSubtitle,
       showLoadingProgress, loadingProgress, isBookLoaded,
@@ -183,7 +182,7 @@ export default {
       persistReadingPosition: readingPosition.persistReadingPosition,
       refs: {
         isLoadingBook, loadingTitle, loadingMessage,
-        loadingSubtitle, showLoadingProgress, currentEpubUrl,
+        loadingSubtitle, showLoadingProgress, openBookFile, currentEpubUrl,
         currentBookKey, chapters, tableOfContents,
         currentChapter, spineItems, onlineLoadError
       },
@@ -253,7 +252,8 @@ export default {
     const downloadEpub = async () => {
       if (downloadPending.value) return;
       const url = currentEpubUrl.value;
-      if (!url) {
+      const book = openBookFile.value;
+      if (!book && !url) {
         addNotification({ message: 'No EPUB URL available for download', type: 'error' });
         return;
       }
@@ -265,7 +265,7 @@ export default {
         if (downloadPending.value) downloadDelayed.value = true;
       }, 3000);
       try {
-        const result = await downloadEpubFile(url);
+        const result = book ? await saveOpenBook(book) : await downloadOriginalSource(url);
         if (result.status === 'waiting') {
           addNotification({
             message: 'The browser accepted the download but is still waiting for data. Check Downloads for its status.',
@@ -274,7 +274,7 @@ export default {
           });
         } else {
           addNotification({
-            message: 'EPUB download started in your browser.',
+            message: result.status === 'requested' ? 'Request handed to the browser.' : 'Download started in your browser.',
             type: 'success',
           });
         }
