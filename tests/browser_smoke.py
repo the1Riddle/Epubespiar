@@ -66,13 +66,20 @@ def write_epub(path: Path, malicious: bool = False):
   <dc:creator>Audit</dc:creator>
 </metadata>
 <manifest>
+  <item id="prefixed" href="prefixed.xhtml" media-type="application/xhtml+xml"/>
   <item id="one" href="chapter.xhtml" media-type="application/xhtml+xml"/>
   <item id="cover" href="images/cover%20with%20spaces.png" media-type="image/png" properties="cover-image"/>
 </manifest>
-<spine><itemref idref="one"/></spine>
+<spine><itemref idref="one"/><itemref idref="prefixed"/></spine>
 </package>""",
         )
         archive.writestr("EPUB/chapter.xhtml", chapter)
+        archive.writestr("EPUB/prefixed.xhtml", """<x:html xmlns:x="http://www.w3.org/1999/xhtml">
+          <x:head><x:title>Namespaced chapter</x:title></x:head>
+          <x:body><x:div><x:section id="example"><x:h1>Second chapter</x:h1>
+            <x:p>Visible <x:strong>chapter text</x:strong>.</x:p>
+            <x:img src="images/illustration.png" alt="Chapter illustration"/>
+          </x:section></x:div></x:body></x:html>""")
         archive.writestr("EPUB/cover.png", fixture_png())
         archive.writestr("EPUB/images/illustration.png", fixture_png())
         archive.writestr("EPUB/images/cover with spaces.png", fixture_png())
@@ -115,6 +122,10 @@ def main():
                 host = page.locator(".chapter-content-host").first
                 host.wait_for(state="visible", timeout=25000)
                 assert page.locator(".download-book-button").count() == 0, "Local drop offered a download"
+                section = page.locator(".chapter-content-host section#example")
+                assert section.locator("h1").inner_text() == "Second chapter"
+                assert section.locator("p").inner_text() == "Visible chapter text."
+                assert section.locator("img").get_attribute("src").startswith("blob:")
                 content = host.evaluate("(el) => el.shadowRoot?.innerHTML || ''")
                 assert "Reader security fixture" in content, content[:800]
                 assert "<script" not in content.lower(), "Script survived EPUB sanitization"

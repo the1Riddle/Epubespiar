@@ -154,5 +154,9 @@ export const parseAndProcessChapter = async (
     }
   }
 
-  return new XMLSerializer().serializeToString(doc);
+  // Serialize the parsed tree as HTML so XHTML namespace prefixes become
+  // ordinary HTML tag names before highlighting and native sanitization.
+  const template = document.createElement("template");
+  template.content.append(doc.documentElement);
+  return template.innerHTML;
 };

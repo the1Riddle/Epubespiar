@@ -130,6 +130,10 @@ def main():
             driver.get("http://localhost:8080/")
             wait.until(conditions.presence_of_element_located((By.CSS_SELECTOR, "input[type=file]"))).send_keys(str(source))
             wait.until(conditions.visibility_of_element_located((By.CSS_SELECTOR, ".chapter-content-host")))
+            hosts = wait.until(lambda d: d.find_elements(By.CSS_SELECTOR, ".chapter-content-host")
+                               if len(d.find_elements(By.CSS_SELECTOR, ".chapter-content-host")) == 2 else False)
+            paragraph = hosts[1].shadow_root.find_element(By.CSS_SELECTOR, "section#example p")
+            assert paragraph.is_displayed() and paragraph.text == "Visible chapter text."
             assert not driver.find_elements(*save), "Picker-opened book offered a download"
             print("PASS: intercepted HTTPS book can be saved; shelf and picker opens have no download")
 
