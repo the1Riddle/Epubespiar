@@ -231,7 +231,7 @@
           </div>
           <div class="dialog-body">
             <p class="delete-confirmation-text">
-              Are you sure you want to remove <strong>{{ bookToDelete?.title }}</strong> from your library?
+              Are you sure you want to remove <strong>{{ bookToDelete?.title }}</strong> from your library and delete its saved copy and reading position?
             </p>
           </div>
           <div class="dialog-footer">
@@ -251,7 +251,7 @@
 <script>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import useCollections from '../../../composables/useCollections';
-import useBookStorage from '../../../composables/useBookStorage';
+import { removeLibraryBook } from '../../../services/library/bookData.js';
 
 export default {
   props: {
@@ -274,7 +274,6 @@ export default {
     const bookToDelete = ref(null);
     
     const { getCollections, createCollection, addBookToCollection, removeBookFromCollection } = useCollections();
-    const { deleteBook } = useBookStorage();
     const collections = ref(getCollections());
 
     // Check screen size
@@ -415,20 +414,12 @@ export default {
       if (!bookToDelete.value) return;
       
       try {
-        await deleteBook(bookToDelete.value.id);
-        
-        // Remove from all collections
-        collections.value.forEach(collection => {
-          if (collection.bookIds?.includes(bookToDelete.value.id)) {
-            removeBookFromCollection(collection.id, bookToDelete.value.id);
-          }
-        });
-        
-        // Refresh collections
+        const book = bookToDelete.value;
+        await removeLibraryBook(book);
         collections.value = getCollections();
         
         // Emit event to parent to update book list
-        emit('book-deleted', bookToDelete.value.id);
+        emit('book-deleted', book.id);
         
         showDeleteDialog.value = false;
         bookToDelete.value = null;

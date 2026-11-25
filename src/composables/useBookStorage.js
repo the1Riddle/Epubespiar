@@ -203,6 +203,19 @@ export default function useBookStorage() {
     }
   };
 
+  const hasBook = async (bookId) => {
+    const db = await openDatabase();
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = db.transaction(STORE_NAME).objectStore(STORE_NAME).getKey(bookId);
+        request.onsuccess = () => resolve(request.result !== undefined);
+        request.onerror = () => reject(request.error);
+      });
+    } finally {
+      db.close();
+    }
+  };
+
   const deleteBook = async (bookId) => {
     try {
       const db = await openDatabase();
@@ -258,6 +271,7 @@ export default function useBookStorage() {
     getBook,
     getAllBooks,
     updateBook,
+    hasBook,
     deleteBook,
     clearAllBooks,
   };

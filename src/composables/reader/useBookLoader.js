@@ -36,20 +36,6 @@ export function useBookLoader({
     spineItems,
   } = refs;
 
-  const getBookStorageKey = (metadata) => {
-    const identifier = String(metadata?.identifier || "").trim();
-    if (identifier) return `id:${identifier}`;
-
-    const title = String(metadata?.title || "untitled")
-      .trim()
-      .toLowerCase();
-    const creator = String(metadata?.creator || "unknown")
-      .trim()
-      .toLowerCase();
-
-    return `meta:${title}::${creator}`;
-  };
-
   const loadEpub = async (file, { sourceUrl = null, intercepted = false, storedId = null } = {}) => {
     if (!file || busy) return false;
     busy = true;
@@ -86,7 +72,8 @@ export function useBookLoader({
       } = await parseEpubArchive(file, makeUrl);
 
       if (!chapterEntries.length) throw new Error("No readable chapters");
-      if (!storedId) {
+      let bookId = storedId;
+      if (!bookId) {
         const bytes = await file.arrayBuffer();
 
         const hash = Array.from(
@@ -94,13 +81,13 @@ export function useBookLoader({
           (b) => b.toString(16).padStart(2, "0"),
         ).join("");
 
-        const id = "sha256:" + hash;
-        const existing = await storage.getBook(id);
+        bookId = "sha256:" + hash;
+        const existing = await storage.getBook(bookId);
         const onlineSource = sourceUrl;
 
         await storage.saveBook({
           ...existing,
-          id,
+          id: bookId,
           file,
           sourceUrl: onlineSource || existing?.sourceUrl,
           title: metadata.title,
@@ -115,7 +102,7 @@ export function useBookLoader({
             .getCollections()
             .find((c) => c.name === "Online Books");
           if (!online) online = collections.createCollection("Online Books");
-          collections.addBookToCollection(online.id, id);
+          collections.addBookToCollection(online.id, bookId);
         }
 
         localStorage.setItem("reader-has-imported", "true");
@@ -133,8 +120,8 @@ export function useBookLoader({
       tableOfContents.value = sidebarToc;
       spineItems.value = parsedSpineItems;
       currentChapter.value = chapterEntries[0]?.href || null;
-      currentBookKey.value = getBookStorageKey(metadata);
-      await restoreReadingPosition();
+      currentBookKey.value = bookId;
+      await restoreReadingPosition(metadata);
 
       onOpened?.();
       addNotification({

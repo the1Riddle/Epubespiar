@@ -42,7 +42,7 @@
       :download-delayed="downloadDelayed"
     />
 
-    <bookshelf-sidebar :isOpen="bookshelfOpen" :books="shelfBooks" :isBookLoaded="isBookLoaded" @close="bookshelfOpen = false" @file-upload="file => loadEpub(file)" @book-select="openShelfBook" @book-deleted="refreshShelf" />
+    <bookshelf-sidebar :isOpen="bookshelfOpen" :books="shelfBooks" :isBookLoaded="isBookLoaded" @close="bookshelfOpen = false" @file-upload="file => loadEpub(file)" @book-select="openShelfBook" @book-deleted="onBookDeleted" />
     <div class="main-content">
       <div
         v-if="!isBookLoaded && onlineLoadError && currentEpubUrl"
@@ -226,6 +226,13 @@ export default {
       window.history.replaceState({}, '', homeUrl);
     };
 
+    const onBookDeleted = id => {
+      if (currentBookKey.value === id) {
+        currentBookKey.value = null;
+        handleCloseBook();
+      } else refreshShelf();
+    };
+
     const zoomIn = () => {
       zoomLevel.value = Math.min(Number((zoomLevel.value + readerLimits.zoomLevel.step).toFixed(2)), readerLimits.zoomLevel.max);
     };
@@ -397,7 +404,7 @@ export default {
 
     return {
       headerToolbar,
-      bookshelfOpen, shelfBooks, toggleBookshelf, toggleSettings, openShelfBook, refreshShelf,
+      bookshelfOpen, shelfBooks, toggleBookshelf, toggleSettings, openShelfBook, refreshShelf, onBookDeleted,
       sidebarOpen, currentPage, totalPages,
       settingsOpen, fontWeight, fontFamily, showInlineControls, currentChapterTitle,
       zoomLevel, fontSize, bookContent, tableOfContents,

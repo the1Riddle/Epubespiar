@@ -4,6 +4,7 @@ Runs on GitHub Actions with Playwright's extension-capable Chromium build.
 Never includes a malicious fixture outside the local throwaway browser profile.
 """
 from pathlib import Path
+import hashlib
 import tempfile
 import zipfile
 import struct
@@ -218,6 +219,41 @@ def main():
                 )
                 page.keyboard.press("Control+[")
                 page.locator(".sidebar.open").wait_for(state="hidden", timeout=5000)
+
+                # Seed a legacy bookmark and a collection updated outside the sidebar.
+                book_id = "sha256:" + hashlib.sha256(book.read_bytes()).hexdigest()
+                await_setup = """async id => {
+                  await chrome.storage.local.set({readerReadingPositions: {
+                    [id]: {scrollPercentage: 25},
+                    'id:epubespiar-security-fixture': {scrollPercentage: 20},
+                    other: {scrollPercentage: 13}
+                  }});
+                  localStorage.setItem('epub_reader_collections', JSON.stringify([
+                    {id: 'all', name: 'All Books', bookIds: [], isDefault: true},
+                    {id: 'custom', name: 'Shelf', bookIds: [id, 'other']}
+                  ]));
+                }"""
+                page.keyboard.press("Control+Home")
+                page.locator(".book-card").first.hover()
+                page.evaluate(await_setup, book_id)
+                page.get_by_title("Remove from library").click()
+                page.locator(".dialog-button.danger").click()
+                host.wait_for(state="detached")
+                page.locator(".book-card").first.wait_for(state="detached")
+                remaining = page.evaluate("""async () => {
+                  const db = await new Promise(resolve => {
+                    const req = indexedDB.open('EpubReaderDB');
+                    req.onsuccess = () => resolve(req.result);
+                  });
+                  const ids = await new Promise(resolve => {
+                    const req = db.transaction('books').objectStore('books').getAllKeys();
+                    req.onsuccess = () => resolve(req.result);
+                  });
+                  db.close();
+                  return [ids, (await chrome.storage.local.get('readerReadingPositions')).readerReadingPositions,
+                    JSON.parse(localStorage.getItem('epub_reader_collections'))[1].bookIds];
+                }""")
+                assert remaining == [[], {"other": {"scrollPercentage": 13}}, ["other"]], remaining
 
                 assert not errors, f"Reader JS errors after shortcuts: {errors}"
                 print("PASS: cover/images, unsafe XHTML blocked, panel toggles and Escape fullscreen")

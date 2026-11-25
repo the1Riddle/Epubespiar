@@ -71,6 +71,16 @@ export default function useCollections() {
     }
   };
 
+  const removeBookFromAllCollections = (bookId) => {
+    const stored = localStorage.getItem(COLLECTIONS_KEY);
+    if (!stored) return;
+    const collections = JSON.parse(stored);
+    for (const collection of collections) {
+      if (collection.bookIds) collection.bookIds = collection.bookIds.filter(id => id !== bookId);
+    }
+    localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
+  };
+
   const deleteCollection = (collectionId) => {
     let collections = getCollections();
     collections = collections.filter((c) => c.id !== collectionId);
@@ -92,6 +102,7 @@ export default function useCollections() {
     createCollection,
     addBookToCollection,
     removeBookFromCollection,
+    removeBookFromAllCollections,
     deleteCollection,
     renameCollection,
   };
