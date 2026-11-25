@@ -1,5 +1,7 @@
 import { waitForDownloadActivity } from "./downloadActivity.js";
 
+import { trackOnlineBookDownload, settleOnlineBookDownload } from "./onlineBookDownloads.js";
+
 export function epubFilename(title) {
   const stem = String(title ?? "").normalize("NFC")
     .replace(/[<>:"/\\|?*\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/gu, "_")
@@ -16,7 +18,7 @@ function observeActivity(downloads, id) {
   });
 }
 
-export async function saveOpenBook({ file, title }) {
+export async function saveOpenBook({ file, title, bookId, collectionId }) {
   const filename = epubFilename(title);
   const blob = file.type === "application/epub+zip" ? file : file.slice(0, file.size, "application/epub+zip");
   const url = URL.createObjectURL(blob);
@@ -47,11 +49,15 @@ export async function saveOpenBook({ file, title }) {
     URL.revokeObjectURL(url);
     throw error;
   }
+  trackOnlineBookDownload(id, bookId, collectionId);
   downloads.onChanged.addListener(onChanged);
   downloads.onErased.addListener(onErased);
   // A small local file may already have finished before registration.
   const [item] = await downloads.search({ id });
-  if (!item || item.state !== "in_progress") release();
+  if (!item || item.state !== "in_progress") {
+    release();
+    settleOnlineBookDownload(id, item?.state ?? "erased");
+  }
   return observeActivity(downloads, id);
 }
 

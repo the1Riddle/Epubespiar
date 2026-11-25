@@ -250,7 +250,7 @@
 
 <script>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import useCollections from '../../../composables/useCollections';
+import useCollections, { COLLECTIONS_KEY, COLLECTIONS_CHANGED } from '../../../composables/useCollections';
 import { removeLibraryBook } from '../../../services/library/bookData.js';
 
 export default {
@@ -276,6 +276,15 @@ export default {
     const { getCollections, createCollection, addBookToCollection, removeBookFromCollection } = useCollections();
     const collections = ref(getCollections());
 
+    const refreshCollections = () => {
+      collections.value = getCollections();
+      selectedCollection.value = collections.value.find(c => c.id === selectedCollection.value?.id)
+        ?? collections.value.find(c => c.id === 'all');
+    };
+    const onStorage = event => {
+      if (event.key === COLLECTIONS_KEY) refreshCollections();
+    };
+
     // Check screen size
     const checkMobile = () => {
       isMobile.value = window.innerWidth < 1024;
@@ -288,6 +297,8 @@ export default {
     };
 
     onMounted(() => {
+      window.addEventListener(COLLECTIONS_CHANGED, refreshCollections);
+      window.addEventListener('storage', onStorage);
       checkMobile();
       window.addEventListener('resize', checkMobile);
       // Select "All Books" collection by default
@@ -295,6 +306,8 @@ export default {
     });
 
     onUnmounted(() => {
+      window.removeEventListener(COLLECTIONS_CHANGED, refreshCollections);
+      window.removeEventListener('storage', onStorage);
       window.removeEventListener('resize', checkMobile);
     });
 
@@ -367,7 +380,6 @@ export default {
     const handleCreateCollection = () => {
       if (newCollectionName.value.trim()) {
         const newCollection = createCollection(newCollectionName.value.trim());
-        collections.value.push(newCollection);
         newCollectionName.value = '';
         showNewCollectionDialog.value = false;
         // Optionally select the new collection

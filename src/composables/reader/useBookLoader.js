@@ -73,6 +73,7 @@ export function useBookLoader({
 
       if (!chapterEntries.length) throw new Error("No readable chapters");
       let bookId = storedId;
+      let collectionId;
       if (!bookId) {
         const bytes = await file.arrayBuffer();
 
@@ -102,7 +103,8 @@ export function useBookLoader({
             .getCollections()
             .find((c) => c.name === "Online Books");
           if (!online) online = collections.createCollection("Online Books");
-          collections.addBookToCollection(online.id, bookId);
+          collectionId = online.id;
+          collections.addBookToCollection(collectionId, bookId);
         }
 
         localStorage.setItem("reader-has-imported", "true");
@@ -114,7 +116,7 @@ export function useBookLoader({
       // Only register new book resources after the previous book has been reset.
       urls.forEach(registerObjectUrl);
       urlsTransferred = true;
-      if (intercepted && sourceUrl) downloadableBook.value = { file, title: metadata.title };
+      if (intercepted && sourceUrl) downloadableBook.value = { file, title: metadata.title, bookId, collectionId };
       loadingMessage.value = "Rendering chapters...";
       chapters.value = chapterEntries;
       tableOfContents.value = sidebarToc;

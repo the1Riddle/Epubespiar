@@ -110,6 +110,7 @@ import { useReadingPosition } from '../../composables/reader/useReadingPosition.
 import { useReaderState } from '../../composables/reader/useReaderState.js';
 import { readerDefaults, readerLimits } from '../../composables/reader/useReaderSettings.js';
 import { isReaderTypingEvent, useReaderShortcuts } from '../../composables/reader/useReaderShortcuts.js';
+import { observeOnlineBookDownloads } from '../../services/epubProcesor/onlineBookDownloads.js';
 import { saveOpenBook, downloadOriginalSource } from '../../services/epubProcesor/downloadEpub.js';
 
 export default {
@@ -384,6 +385,7 @@ export default {
       }
     };
 
+    const stopObservingDownloads = observeOnlineBookDownloads((globalThis.browser ?? globalThis.chrome)?.downloads);
     onMounted(() => {
       document.addEventListener('keyup', handleKeyUp);
       window.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -394,6 +396,7 @@ export default {
       settingsReady.then(() => loader.loadBookFromUrl());
     });
     onUnmounted(() => {
+      stopObservingDownloads();
       document.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);

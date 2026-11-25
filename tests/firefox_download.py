@@ -94,7 +94,22 @@ def main():
                 wait.until(lambda _: output.exists() and output.read_bytes() == original)
                 output.unlink()
 
+            wait.until(conditions.element_to_be_clickable(save))
+            book_id = driver.execute_script("""
+              const key = 'epub_reader_collections';
+              const collections = JSON.parse(localStorage.getItem(key));
+              const [id] = collections.find(c => c.name === 'Online Books').bookIds;
+              collections.push({id:'test-custom', name:'My shelf', bookIds:[id]});
+              localStorage.setItem(key, JSON.stringify(collections));
+              return id;
+            """)
+            assert book_id
             verify_save()
+            wait.until(lambda d: d.execute_script("""
+              const collections = JSON.parse(localStorage.getItem('epub_reader_collections'));
+              return !collections.find(c => c.name === 'Online Books').bookIds.includes(arguments[0])
+                && collections.find(c => c.id === 'test-custom').bookIds.includes(arguments[0]);
+            """, book_id))
             assert len(requests) == 1, requests
             # Reopen the very same stored book, in the same reader tab.
             driver.find_element(By.CSS_SELECTOR, '[aria-label="Open Bookshelf"]').click()

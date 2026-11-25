@@ -7,6 +7,11 @@ the browser downloads API. Its suggested filename comes from the book title
 and ends in `.epub`. The validated copy can be saved offline. Local files, reader-page drops,
 and books reopened from the shelf have no download action.
 
+A completed reader download removes the book from **Online Books**. The library copy,
+reading position and other collections are retained. Cancelled or interrupted downloads
+keep their membership. If the reader closes during an accepted download, the next
+reader session checks the browser download history for its final state.
+
 When an intercepted HTTPS preview fails, no validated book is available. **Download with browser**
 requests the original HTTPS resource and the server determines its contents and name.
 
