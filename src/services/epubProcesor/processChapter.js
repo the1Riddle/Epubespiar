@@ -75,6 +75,19 @@ export const parseAndProcessChapter = async (
     ? parser.parseFromString(chapterContent, "text/html")
     : xhtmlDoc;
 
+  // HTML parsers do not resolve XML element prefixes. Make recognized XHTML
+  // elements unprefixed while they still have their original namespace.
+  const xhtml = "http://www.w3.org/1999/xhtml";
+  for (const node of Array.from(doc.getElementsByTagNameNS(xhtml, "*"))) {
+    if (!node.prefix) continue;
+    const element = doc.createElementNS(xhtml, node.localName);
+    for (const attr of node.attributes) {
+      element.setAttributeNS(attr.namespaceURI, attr.name, attr.value);
+    }
+    while (node.firstChild) element.append(node.firstChild);
+    node.replaceWith(element);
+  }
+
   const links = doc.querySelectorAll("link[rel='stylesheet']");
   for (const link of Array.from(links)) {
     const href = link.getAttribute("href") || "";
@@ -154,8 +167,7 @@ export const parseAndProcessChapter = async (
     }
   }
 
-  // Serialize the parsed tree as HTML so XHTML namespace prefixes become
-  // ordinary HTML tag names before highlighting and native sanitization.
+  // Use HTML serialization for the next stage, which consumes HTML fragments.
   const template = document.createElement("template");
   template.content.append(doc.documentElement);
   return template.innerHTML;

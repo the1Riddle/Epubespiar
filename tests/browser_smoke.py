@@ -122,7 +122,11 @@ def main():
                 host = page.locator(".chapter-content-host").first
                 host.wait_for(state="visible", timeout=25000)
                 assert page.locator(".download-book-button").count() == 0, "Local drop offered a download"
-                section = page.locator(".chapter-content-host section#example")
+                chapter_dom = page.locator(".chapter-content-host").nth(1).evaluate(
+                    "(host) => host.shadowRoot.querySelector('.chapter-content').innerHTML"
+                )
+                assert 'Second chapter' in chapter_dom, chapter_dom
+                section = page.locator(".chapter-content-host").nth(1)
                 assert section.locator("h1").inner_text() == "Second chapter"
                 assert section.locator("p").inner_text() == "Visible chapter text."
                 assert section.locator("img").get_attribute("src").startswith("blob:")
