@@ -2,6 +2,7 @@ import useBookStorage from "../useBookStorage.js";
 import useCollections from "../useCollections.js";
 import { validateFile, validateURL } from "../../utils/security.js";
 import { fetchWithRetry } from "../../services/epubHttps/fetchWithRetry.js";
+import { readLimitedBlob } from "../../services/epubHttps/limitedResponse.js";
 import { parseEpubArchive } from "../../services/epubProcesor/parseEpubArchive.js";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
@@ -11,7 +12,7 @@ export function useBookLoader({
   refs,
   addNotification,
   resetReaderState,
-  createTrackedObjectUrl,
+  registerObjectUrl,
   restoreReadingPosition,
   onSaved,
   onOpened,
@@ -25,7 +26,9 @@ export function useBookLoader({
     loadingMessage,
     loadingSubtitle,
     showLoadingProgress,
+    downloadableBook,
     currentEpubUrl,
+    onlineLoadError,
     currentBookKey,
     chapters,
     tableOfContents,
@@ -33,25 +36,12 @@ export function useBookLoader({
     spineItems,
   } = refs;
 
-  const getBookStorageKey = (metadata) => {
-    const identifier = String(metadata?.identifier || "").trim();
-    if (identifier) return `id:${identifier}`;
-
-    const title = String(metadata?.title || "untitled")
-      .trim()
-      .toLowerCase();
-    const creator = String(metadata?.creator || "unknown")
-      .trim()
-      .toLowerCase();
-
-    return `meta:${title}::${creator}`;
-  };
-
-  const loadEpub = async (file, preserveUrl = false, storedId = null) => {
+  const loadEpub = async (file, { sourceUrl = null, intercepted = false, storedId = null } = {}) => {
     if (!file || busy) return false;
     busy = true;
     const shouldOpen = !!storedId || !chapters.value.length;
     const urls = [];
+    let urlsTransferred = false;
     const makeUrl = (blob) => {
       const url = URL.createObjectURL(blob);
       urls.push(url);
@@ -65,15 +55,14 @@ export function useBookLoader({
     showLoadingProgress.value = false;
 
     try {
-      if (!preserveUrl) {
-        currentEpubUrl.value = null;
-      }
+      if (shouldOpen) currentEpubUrl.value = sourceUrl;
 
       if (!validateFile(file, MAX_FILE_SIZE, ALLOWED_TYPES)) {
         throw new Error("Invalid EPUB file type or size");
       }
 
       loadingMessage.value = "Parsing book metadata...";
+      if (sourceUrl) onlineLoadError.value = "";
       const {
         metadata,
         cover,
@@ -83,7 +72,9 @@ export function useBookLoader({
       } = await parseEpubArchive(file, makeUrl);
 
       if (!chapterEntries.length) throw new Error("No readable chapters");
-      if (!storedId) {
+      let bookId = storedId;
+      let collectionId;
+      if (!bookId) {
         const bytes = await file.arrayBuffer();
 
         const hash = Array.from(
@@ -91,47 +82,48 @@ export function useBookLoader({
           (b) => b.toString(16).padStart(2, "0"),
         ).join("");
 
-        const id = "sha256:" + hash;
-        const existing = await storage.getBook(id);
+        bookId = "sha256:" + hash;
+        const existing = await storage.getBook(bookId);
+        const onlineSource = sourceUrl;
 
         await storage.saveBook({
           ...existing,
-          id,
-          file: new File([bytes], file.name || "book.epub", {
-            type: "application/epub+zip",
-          }),
+          id: bookId,
+          file,
+          sourceUrl: onlineSource || existing?.sourceUrl,
           title: metadata.title,
           author: metadata.creator,
           metadata,
           cover: cover || existing?.cover,
         });
 
-        if (preserveUrl && currentEpubUrl.value?.startsWith("https://")) {
+        if (onlineSource) {
           const collections = useCollections();
           let online = collections
             .getCollections()
             .find((c) => c.name === "Online Books");
           if (!online) online = collections.createCollection("Online Books");
-          collections.addBookToCollection(online.id, id);
-          await storage.updateBook(id, { sourceUrl: currentEpubUrl.value });
+          collectionId = online.id;
+          collections.addBookToCollection(collectionId, bookId);
         }
 
         localStorage.setItem("reader-has-imported", "true");
         await onSaved?.();
       }
-      if (!shouldOpen) {
-        urls.forEach((url) => URL.revokeObjectURL(url));
-        return true;
-      }
+      if (!shouldOpen) return true;
       persistReadingPosition?.();
       resetReaderState();
+      // Only register new book resources after the previous book has been reset.
+      urls.forEach(registerObjectUrl);
+      urlsTransferred = true;
+      if (intercepted && sourceUrl) downloadableBook.value = { file, title: metadata.title, bookId, collectionId };
       loadingMessage.value = "Rendering chapters...";
       chapters.value = chapterEntries;
       tableOfContents.value = sidebarToc;
       spineItems.value = parsedSpineItems;
       currentChapter.value = chapterEntries[0]?.href || null;
-      currentBookKey.value = getBookStorageKey(metadata);
-      await restoreReadingPosition();
+      currentBookKey.value = bookId;
+      await restoreReadingPosition(metadata);
 
       onOpened?.();
       addNotification({
@@ -140,7 +132,11 @@ export function useBookLoader({
       });
       return true;
     } catch (error) {
+      if (urlsTransferred) resetReaderState();
       console.error("Failed to load EPUB:", error);
+      if (sourceUrl) {
+        onlineLoadError.value = error?.message || "The file could not be opened as an EPUB";
+      }
 
       addNotification({
         message: "Failed to load book. Please check the EPUB file.",
@@ -148,6 +144,8 @@ export function useBookLoader({
       });
       return false;
     } finally {
+      // Failed or metadata-only imports never transfer ownership to reader state.
+      if (!urlsTransferred) urls.forEach((url) => URL.revokeObjectURL(url));
       busy = false;
       isLoadingBook.value = false;
     }
@@ -155,10 +153,12 @@ export function useBookLoader({
 
   const loadBookFromUrl = async () => {
     try {
-      const fileParam = new URLSearchParams(window.location.search).get("file");
+      const params = new URLSearchParams(window.location.search);
+      const fileParam = params.get("file");
       if (!fileParam) return;
 
-      const url = decodeURIComponent(fileParam);
+      // URLSearchParams.get() already decodes the query value.
+      const url = fileParam;
       if (!validateURL(url)) throw new Error("Invalid or insecure URL");
 
       isLoadingBook.value = true;
@@ -167,16 +167,26 @@ export function useBookLoader({
       loadingSubtitle.value = "This may take a moment";
 
       currentEpubUrl.value = url.startsWith("https://") ? url : null;
+      onlineLoadError.value = "";
 
-      const response = await fetchWithRetry(url, 2);
+      const blob = await fetchWithRetry(url, 2, {
+        readResponse: response => readLimitedBlob(response, MAX_FILE_SIZE),
+        onRetry: ({ attempt, total }) => {
+          loadingMessage.value = `Connection interrupted; retrying ${attempt}/${total}…`;
+          loadingSubtitle.value = "The source server may be temporarily unavailable";
+        },
+      });
 
-      const blob = await response.blob();
-      await loadEpub(
+      const opened = await loadEpub(
         new File([blob], "downloaded.epub", { type: "application/epub+zip" }),
-        true,
+        { sourceUrl: currentEpubUrl.value, intercepted: params.get("source") === "https-intercept" },
       );
+      if (!opened && !onlineLoadError.value) {
+        onlineLoadError.value = "The remote file could not be opened as an EPUB";
+      }
     } catch (error) {
       console.error("Error loading book from URL:", error);
+      onlineLoadError.value = error?.message || "Could not retrieve this EPUB";
       isLoadingBook.value = false;
       addNotification({
         message: "Failed to load book from URL",

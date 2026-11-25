@@ -20,7 +20,7 @@ pnpm install
 pnpm run build
 ```
 
-Use the full build to generate both extension packages, including their browser-specific manifests and content scripts. Use `pnpm run dev` for quick reader UI iteration at `http://localhost:8080`. Verify extension behavior in an installed development build. The release command `pnpm run build:prod` increments the version as part of its workflow.
+Use the full build to generate both extension packages, including their browser-specific manifests and content scripts. Use `pnpm run dev` for quick reader UI iteration at `http://localhost:8080`. In the dev reader, use **Open EPUB** or drop a file, then verify the local book renders without a download button. Keep Vite running for hot reload. Install the unpacked build to test interception and the extension downloads API. The release command `pnpm run build:prod` increments the version as part of its workflow.
 
 | Browser | Load the extension |
 | --- | --- |

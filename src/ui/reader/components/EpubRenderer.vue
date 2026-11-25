@@ -44,6 +44,7 @@
             <chapter-content
               data-shadow-host="chapter-content"
               :book-styles="chapter.styles"
+              :is-trusted-object-url="isTrustedObjectUrl"
               :content-html="getHighlightedChapterContent(chapter)"
               :font-size="fontSize"
               :font-weight="fontWeight"
@@ -73,7 +74,8 @@ export default {
     fontSize: { type: Number, default: 16 },
     fontWeight: { type: String, default: '400' },
     fontFamily: { type: String, default: 'default' },
-    chapters: { type: Array, default: () => [] }
+    chapters: { type: Array, default: () => [] },
+    isTrustedObjectUrl: { type: Function, default: () => false }
   },
   emits: ['content-scroll', 'navigate-internal'],
   setup(props, { emit, expose }) {
@@ -232,13 +234,13 @@ export default {
       if (fragment) {
         setTimeout(() => {
           let fragmentEl = chapterEl.querySelector(`#${CSS.escape(fragment)}`)
-            || chapterEl.querySelector(`[name="${fragment}"]`);
+            || chapterEl.querySelector(`[name="${CSS.escape(fragment)}"]`);
           if (!fragmentEl) {
             const shadowHosts = chapterEl.querySelectorAll('[data-shadow-host="chapter-content"]');
             for (const host of Array.from(shadowHosts)) {
               const shadowRoot = host.shadowRoot;
               fragmentEl = shadowRoot?.querySelector(`#${CSS.escape(fragment)}`)
-                || shadowRoot?.querySelector(`[name="${fragment}"]`);
+                || shadowRoot?.querySelector(`[name="${CSS.escape(fragment)}"]`);
               if (fragmentEl) break;
             }
           }

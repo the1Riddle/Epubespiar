@@ -1,32 +1,38 @@
-export async function fetchWithRetry(url, retries = 2) {
-    let lastError;
+const RETRYABLE_HTTP_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
-    for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-            const response = await fetch(url);
-
-            if (!response.ok) {
-            throw new Error(
-                `Request failed: ${response.status} ${response.statusText}`
-            );
-            }
-
-            return response;
-        } catch (error) {
-            lastError = error;
-
-            console.warn(
-            `Fetch failed (${attempt + 1}/${retries + 1})`,
-            error
-            );
-
-            if (attempt < retries) {
-            await new Promise(resolve =>
-                setTimeout(resolve, 1000 * (attempt + 1))
-            );
-            }
-        }
+/**
+ * Retry an entire HTTP read (headers *and* body). A server can return 200 OK
+ * then interrupt the response stream; retrying only fetch() misses that case.
+ * Do not retry authorization, missing-file or invalid-content errors.
+ */
+export async function fetchWithRetry(url, retries = 2, {
+  fetcher = fetch,
+  readResponse = response => response,
+  pause = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  onRetry = () => {},
+} = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      // Cache bypass is only defined for HTTP(S); preserve file:// behavior
+      // in Chromium's local-file reader when its permission is enabled.
+      const options = /^https?:\/\//i.test(url) ? { cache: "no-store" } : undefined;
+      const response = await fetcher(url, options);
+      if (!response.ok) {
+        const error = new Error(`Request failed: HTTP ${response.status} ${response.statusText || ""}`.trim());
+        error.httpStatus = response.status;
+        throw error;
+      }
+      return await readResponse(response);
+    } catch (error) {
+      lastError = error;
+      const retryable = error?.retryable !== false &&
+        (error?.httpStatus == null || RETRYABLE_HTTP_STATUS.has(error.httpStatus));
+      if (attempt >= retries || !retryable) break;
+      console.warn(`EPUB request attempt ${attempt + 1} failed, retrying`, error);
+      onRetry({ attempt: attempt + 2, total: retries + 1, error });
+      await pause(1000 * (attempt + 1));
     }
-
-    throw lastError;
+  }
+  throw lastError;
 }

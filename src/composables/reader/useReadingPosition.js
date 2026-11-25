@@ -1,4 +1,4 @@
-import { useBrowserLocalStorage } from "../useBrowserStorage.js";
+import { getPosition, savePosition } from "../../services/library/bookData.js";
 
 export function useReadingPosition({
   currentBookKey,
@@ -6,25 +6,17 @@ export function useReadingPosition({
   chapters,
   getScrollElement,
 }) {
-  const { data: readingPositions, promise: readingPositionsReady } =
-    useBrowserLocalStorage("readerReadingPositions", {});
   let persistTimer = null;
   const persistReadingPosition = () => {
     if (!currentBookKey.value) return;
     const element = getScrollElement();
     if (!element) return;
     const maxScroll = Math.max(element.scrollHeight - element.clientHeight, 1);
-    readingPositions.value = {
-      ...readingPositions.value,
-      [currentBookKey.value]: {
-        scrollPercentage: Math.min(
-          100,
-          Math.max(0, (element.scrollTop / maxScroll) * 100),
-        ),
-        chapterHref: currentChapter.value,
-        timestamp: Date.now(),
-      },
-    };
+    savePosition(currentBookKey.value, {
+      scrollPercentage: Math.min(100, Math.max(0, (element.scrollTop / maxScroll) * 100)),
+      chapterHref: currentChapter.value,
+      timestamp: Date.now(),
+    }).catch(error => console.error("Failed to save reading position", error));
   };
 
   const schedulePersistReadingPosition = () => {
@@ -32,12 +24,14 @@ export function useReadingPosition({
     persistTimer = setTimeout(persistReadingPosition, 700);
   };
 
-  const restoreReadingPosition = async () => {
+  const restoreReadingPosition = async (metadata) => {
     if (!currentBookKey.value || !chapters.value.length) return;
-    await readingPositionsReady;
-    const saved = readingPositions.value?.[currentBookKey.value];
+    const bookId = currentBookKey.value;
+    const saved = await getPosition(bookId, metadata);
+    if (currentBookKey.value !== bookId) return;
     if (!saved || typeof saved.scrollPercentage !== "number") return;
     setTimeout(() => {
+      if (currentBookKey.value !== bookId) return;
       const element = getScrollElement();
       if (!element) return;
       const maxScroll = Math.max(

@@ -16,6 +16,7 @@ const firefoxManifest = {
   },
   browser_specific_settings: {
     gecko: {
+      strict_min_version: "148.0",
       id: process.env.FIREFOX_MANIFEST_EXT_ID,
       data_collection_permissions: {
         required: ["none"]

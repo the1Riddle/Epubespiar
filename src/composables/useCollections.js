@@ -1,8 +1,10 @@
 /**
  * Composable for managing book collections
  */
+export const COLLECTIONS_KEY = "epub_reader_collections";
+export const COLLECTIONS_CHANGED = "epub-collections-changed";
+
 export default function useCollections() {
-  const COLLECTIONS_KEY = "epub_reader_collections";
 
   // Get all collections from localStorage
   const getCollections = () => {
@@ -29,11 +31,8 @@ export default function useCollections() {
 
   // Save collections to localStorage
   const saveCollections = (collections) => {
-    try {
-      localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
-    } catch (error) {
-      console.error("Error saving collections:", error);
-    }
+    localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(collections));
+    window.dispatchEvent(new Event(COLLECTIONS_CHANGED));
   };
 
   const createCollection = (name) => {
@@ -65,10 +64,20 @@ export default function useCollections() {
     const collections = getCollections();
     const collection = collections.find((c) => c.id === collectionId);
 
-    if (collection) {
+    if (collection?.bookIds.includes(bookId)) {
       collection.bookIds = collection.bookIds.filter((id) => id !== bookId);
       saveCollections(collections);
     }
+  };
+
+  const removeBookFromAllCollections = (bookId) => {
+    const stored = localStorage.getItem(COLLECTIONS_KEY);
+    if (!stored) return;
+    const collections = JSON.parse(stored);
+    for (const collection of collections) {
+      if (collection.bookIds) collection.bookIds = collection.bookIds.filter(id => id !== bookId);
+    }
+    saveCollections(collections);
   };
 
   const deleteCollection = (collectionId) => {
@@ -92,6 +101,7 @@ export default function useCollections() {
     createCollection,
     addBookToCollection,
     removeBookFromCollection,
+    removeBookFromAllCollections,
     deleteCollection,
     renameCollection,
   };

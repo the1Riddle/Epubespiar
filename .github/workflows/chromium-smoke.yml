@@ -1,0 +1,41 @@
+name: Chromium EPUB browser smoke test
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+        env:
+          FIREFOX_MANIFEST_EXT_ID: smoke-test@example.invalid
+      - name: Install Playwright (CI-only)
+        run: |
+          python -m pip install --upgrade playwright selenium
+          python -m playwright install --with-deps chromium firefox
+      - name: Test packaged Chromium EPUB reader against hostile XHTML
+        run: python tests/browser_smoke.py
+      - name: Verify native chapter rendering in Firefox
+        run: python tests/firefox_chapter.py
+      - name: Test Firefox extension downloads and Vite reader UI
+        run: |
+          pnpm run dev --host localhost --strictPort > /tmp/epubespiar-vite.log 2>&1 &
+          trap 'kill $! 2>/dev/null || true' EXIT
+          curl --retry 15 --retry-connrefused -fsS http://localhost:8080/ >/dev/null
+          python tests/firefox_download.py

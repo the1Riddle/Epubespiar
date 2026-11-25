@@ -1,5 +1,6 @@
 import browser from "webextension-polyfill";
-import { validateURL, secureStorageSet, secureStorageGet } from '../utils/security';
+import { canLoadLocalFileFromReader, isAuthorizedReaderDownload } from "./downloadPolicy.js";
+
 
 // Rate limiting configuration
 const RATE_LIMIT = {
@@ -10,9 +11,9 @@ const RATE_LIMIT = {
 // Message rate limiting
 const messageRateLimit = new Map();
 
-// Track open reader tabs with their instance IDs
-const readerTabs = new Map();
 const processedDownloads = new Set();
+const examiningDownloads = new Set();
+const manualDownloadIds = new Set();
 
 // Function to generate random instance ID
 function generateInstanceId() {
@@ -22,7 +23,7 @@ function generateInstanceId() {
 function isSafeSupportedUrl(url) {
   try {
     const urlObj = new URL(url);
-    return (urlObj.protocol === 'https:' || urlObj.protocol === 'file:' || urlObj.protocol === 'epub:') &&
+    return (urlObj.protocol === 'https:' || urlObj.protocol === 'file:') &&
            urlObj.pathname.length < 2048; // Prevent path traversal
   } catch {
     return false;
@@ -75,7 +76,7 @@ function checkRateLimit(senderId) {
 }
 
 // Function to open or focus the reader tab
-async function openReaderTab(epubUrl = null, isNewInstance = false, options = {}) {
+async function openReaderTab(epubUrl = null, options = {}) {
   try {
     const allowSafeNonEpubUrl = options.allowSafeNonEpubUrl === true;
 
@@ -85,14 +86,13 @@ async function openReaderTab(epubUrl = null, isNewInstance = false, options = {}
 
     const readerURL = browser.runtime.getURL("reader.html");
     const instanceId = generateInstanceId();
-    const finalURL = epubUrl 
-      ? `${readerURL}?file=${encodeURIComponent(epubUrl)}&instance=${instanceId}`
-      : `${readerURL}?instance=${instanceId}`;
-    
+    const finalURL = new URL(readerURL);
+    finalURL.searchParams.set('instance', instanceId);
+    if (epubUrl) finalURL.searchParams.set('file', epubUrl);
+    if (options.interceptedHttps) finalURL.searchParams.set('source', 'https-intercept');
+
     // Always create a new tab with a unique instance ID
-    const tab = await browser.tabs.create({ url: finalURL });
-    readerTabs.set(tab.id, instanceId);
-    return tab;
+    return await browser.tabs.create({ url: finalURL.href });
   } catch (error) {
     console.error('Error opening reader tab:', error);
     browser.runtime.sendMessage({
@@ -113,28 +113,50 @@ browser.runtime.onInstalled.addListener((details) => {
 
 // Listen for browser action (toolbar icon) clicks
 browser.action.onClicked.addListener((tab) => {
-  openReaderTab(null, true).catch((error) => {
+  openReaderTab().catch((error) => {
     console.error('Error handling browser action click:', error);
   });
 });
 
-// Track allowed downloads when user chooses to download instead of preview
-const allowedDownloads = new Set();
+// A short-lived exception prevents the browser's own download request from
+// immediately being intercepted by the reader again. The extension ID check
+// handles browsers that report byExtensionId; the URL token is a fallback.
+const allowedDownloads = new Map();
+const ALLOW_DOWNLOAD_TTL_MS = 120_000;
+
+function consumeAllowedDownload(downloadItem) {
+  const url = downloadItem.url;
+  const token = allowedDownloads.get(url);
+  if (token) allowedDownloads.delete(url);
+  // A download created by this extension is always an intentional handoff.
+  return downloadItem.byExtensionId === browser.runtime.id ||
+    (token !== undefined && token > Date.now());
+}
 
 async function handlePotentialEpubDownload(downloadItem) {
-  if (!downloadItem || processedDownloads.has(downloadItem.id)) {
+  if (!downloadItem || processedDownloads.has(downloadItem.id) ||
+      manualDownloadIds.has(downloadItem.id) ||
+      examiningDownloads.has(downloadItem.id)) {
     return;
   }
 
+  examiningDownloads.add(downloadItem.id);
   try {
     const urlObj = new URL(downloadItem.url);
     const isFileEpub = urlObj.protocol === 'file:' && isLikelyEpubUrl(downloadItem.url);
 
     if (isFileEpub) {
+      // Firefox extension pages cannot fetch file:// URLs (Bugzilla 2085199).
+      // Never cancel a local file when the reader cannot load it.
+      const canReadFile = await canLoadLocalFileFromReader(
+        browser.runtime.getURL('reader.html'), browser.extension
+      );
+      if (!canReadFile) return;
       processedDownloads.add(downloadItem.id);
+      // If tab creation fails, leave the user's original download intact.
+      await openReaderTab(downloadItem.url, { allowSafeNonEpubUrl: true });
       await browser.downloads.cancel(downloadItem.id);
       await browser.downloads.erase({ id: downloadItem.id });
-      await openReaderTab(downloadItem.url, false, { allowSafeNonEpubUrl: true });
       return;
     }
 
@@ -142,8 +164,8 @@ async function handlePotentialEpubDownload(downloadItem) {
       return;
     }
 
-    if (allowedDownloads.has(downloadItem.url)) {
-      allowedDownloads.delete(downloadItem.url);
+    if (consumeAllowedDownload(downloadItem)) {
+      manualDownloadIds.add(downloadItem.id);
       return;
     }
 
@@ -161,12 +183,16 @@ async function handlePotentialEpubDownload(downloadItem) {
 
     if (isEpubByUrl || isEpubByFilename || isEpubByMime) {
       processedDownloads.add(downloadItem.id);
+      // Create the reader before cancelling the original transfer. A tab
+      // creation failure must not destroy the user's intended download.
+      await openReaderTab(downloadItem.url, { allowSafeNonEpubUrl: true, interceptedHttps: true });
       await browser.downloads.cancel(downloadItem.id);
       await browser.downloads.erase({ id: downloadItem.id });
-      await openReaderTab(downloadItem.url, false, { allowSafeNonEpubUrl: true });
     }
   } catch (error) {
     console.error('Error processing potential EPUB download:', error);
+  } finally {
+    examiningDownloads.delete(downloadItem.id);
   }
 }
 
@@ -176,7 +202,16 @@ browser.downloads.onCreated.addListener(async (downloadItem) => {
 });
 
 browser.downloads.onChanged.addListener(async (delta) => {
+  if (manualDownloadIds.has(delta.id)) {
+    if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') {
+      manualDownloadIds.delete(delta.id);
+    }
+    return;
+  }
   if (processedDownloads.has(delta.id)) {
+    if (delta.state?.current === 'complete' || delta.state?.current === 'interrupted') {
+      processedDownloads.delete(delta.id);
+    }
     return;
   }
 
@@ -201,9 +236,10 @@ browser.downloads.onChanged.addListener(async (delta) => {
   }
 });
 
-// Handle tab removal
-browser.tabs.onRemoved.addListener((tabId) => {
-  readerTabs.delete(tabId);
+// Clean up download IDs after the browser removes the item.
+browser.downloads.onErased.addListener((downloadId) => {
+  processedDownloads.delete(downloadId);
+  manualDownloadIds.delete(downloadId);
 });
 
 // Handle protocol registration
@@ -237,18 +273,32 @@ browser.runtime.onMessage.addListener((message, sender) => {
       } else {
         reject(new Error('Invalid EPUB URL'));
       }
-    } else if (message.type === 'ALLOW_DOWNLOAD' && isValidEpubUrl(message.url)) {
-      // Allow manual download of EPUB
-      allowedDownloads.add(message.url);
-      browser.downloads
-        .download({ url: message.url })
+    } else if (message.type === 'ALLOW_DOWNLOAD') {
+      // Only an actual reader page may download its own original source URL.
+      // Many EPUB downloads use opaque /download/<id> endpoints without .epub.
+      if (!isAuthorizedReaderDownload({
+        sender,
+        url: message.url,
+        extensionId: browser.runtime.id,
+        readerUrl: browser.runtime.getURL('reader.html'),
+      })) {
+        reject(new Error('Unauthorized EPUB download request'));
+        return;
+      }
+      const now = Date.now();
+      for (const [url, expiry] of allowedDownloads) {
+        if (expiry <= now) allowedDownloads.delete(url);
+      }
+      allowedDownloads.set(message.url, now + ALLOW_DOWNLOAD_TTL_MS);
+      browser.downloads.download({ url: message.url })
         .then((id) => {
+          manualDownloadIds.add(id);
           resolve({ success: true, downloadId: id });
         })
         .catch((err) => {
-          console.error("Download failed:", err);
+          console.error('Browser download request failed:', err);
           allowedDownloads.delete(message.url);
-          reject(new Error('Download failed: ' + err.message));
+          reject(new Error('Browser could not start download: ' + err.message));
         });
     } else {
       resolve({ success: false, error: 'Invalid message type' });
@@ -256,13 +306,3 @@ browser.runtime.onMessage.addListener((message, sender) => {
   });
 });
 
-// use a safe way to get URL parameters
-function getFileParameter() {
-  try {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('file');
-  } catch (error) {
-    console.error('Error parsing URL parameters:', error);
-    return null;
-  }
-}

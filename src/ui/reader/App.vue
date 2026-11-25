@@ -21,12 +21,12 @@
       :currentPage="currentPage"
       :totalPages="totalPages"
       :isBookLoaded="isBookLoaded"
+      :can-download="!!downloadableBook"
       :fontSize="fontSize"
       :zoomLevel="zoomLevel"
       :showInlineControls="showInlineControls"
       :currentChapterTitle="currentChapterTitle"
-      @toggle-settings="settingsOpen = true"
-      :epubUrl="currentEpubUrl"
+      @toggle-settings="toggleSettings"
       @toggle-bookshelf="toggleBookshelf"
       @toggle-sidebar="toggleSidebar"
       @scroll-up="scrollUp"
@@ -38,10 +38,26 @@
       @file-selected="loadEpub"
       @toggle-fullscreen="toggleFullscreen"
       @download-epub="downloadEpub"
+      :download-pending="downloadPending"
+      :download-delayed="downloadDelayed"
     />
 
-    <bookshelf-sidebar :isOpen="bookshelfOpen" :books="shelfBooks" :isBookLoaded="isBookLoaded" @close="bookshelfOpen = false" @file-upload="file => loadEpub(file)" @book-select="openShelfBook" @book-deleted="refreshShelf" />
+    <bookshelf-sidebar :isOpen="bookshelfOpen" :books="shelfBooks" :isBookLoaded="isBookLoaded" @close="bookshelfOpen = false" @file-upload="file => loadEpub(file)" @book-select="openShelfBook" @book-deleted="onBookDeleted" />
     <div class="main-content">
+      <div
+        v-if="!isBookLoaded && onlineLoadError && currentEpubUrl"
+        class="online-load-recovery"
+        role="alert"
+      >
+        <strong>Couldn't open this online EPUB</strong>
+        <p>{{ onlineLoadError }}</p>
+        <div class="online-load-actions">
+          <button type="button" @click="retryOnlineBook">Retry preview</button>
+          <button v-if="canRecoverDownload" type="button" @click="downloadEpub" :disabled="downloadPending">
+            {{ downloadPending ? 'Waiting for browser…' : 'Download with browser' }}
+          </button>
+        </div>
+      </div>
       <div
         v-if="sidebarOpen"
         class="sidebar-backdrop"
@@ -65,6 +81,7 @@
         :fontWeight="fontWeight"
         :fontFamily="fontFamily"
         :chapters="chapters"
+        :is-trusted-object-url="isTrustedObjectUrl"
         @content-scroll="handleContentScroll"
         @navigate-internal="handleInternalNavigation"
       />
@@ -93,7 +110,8 @@ import { useReadingPosition } from '../../composables/reader/useReadingPosition.
 import { useReaderState } from '../../composables/reader/useReaderState.js';
 import { readerDefaults, readerLimits } from '../../composables/reader/useReaderSettings.js';
 import { isReaderTypingEvent, useReaderShortcuts } from '../../composables/reader/useReaderShortcuts.js';
-import { downloadEpub as downloadEpubFile } from '../../services/epubProcesor/downloadEpub.js';
+import { observeOnlineBookDownloads } from '../../services/epubProcesor/onlineBookDownloads.js';
+import { saveOpenBook, downloadOriginalSource } from '../../services/epubProcesor/downloadEpub.js';
 
 export default {
   components: {
@@ -107,14 +125,17 @@ export default {
     const readerState = useReaderState();
     const settingsOpen = ref(false);
     const headerToolbar = ref(null);
+    const downloadPending = ref(false);
+    const downloadDelayed = ref(false);
+    let downloadDelayTimer = null;
     const {
       sidebarOpen, currentPage, totalPages, zoomLevel,
       fontSize, fontWeight, fontFamily, showInlineControls, settingsReady, bookContent, tableOfContents,
-      chapters, spineItems, currentChapter, currentEpubUrl,
+      chapters, spineItems, currentChapter, downloadableBook, currentEpubUrl, onlineLoadError,
       currentBookKey, isDragging, isLoadingBook,
       loadingTitle, loadingMessage, loadingSubtitle,
       showLoadingProgress, loadingProgress, isBookLoaded,
-      createTrackedObjectUrl, cleanupObjectUrls, resetReaderState
+      registerObjectUrl, isTrustedObjectUrl, cleanupObjectUrls, resetReaderState
     } = readerState;
 
     const currentChapterTitle = computed(() => {
@@ -143,12 +164,18 @@ export default {
       try { shelfBooks.value = await storage.getAllBooks(); }
       catch { addNotification({message:'Could not load library', type:'error'}); }
     };
-    const toggleBookshelf = () => { bookshelfOpen.value = !bookshelfOpen.value; sidebarOpen.value = false; refreshShelf(); };
+    const toggleBookshelf = () => {
+      bookshelfOpen.value = !bookshelfOpen.value;
+      if (bookshelfOpen.value) {
+        sidebarOpen.value = false;
+        refreshShelf();
+      }
+    };
     const openShelfBook = async book => {
       try {
         const saved = await storage.getBook(book.id);
         if (!saved?.file) throw new Error('Missing book');
-        await loader.loadEpub(new File([saved.file], saved.file.name || 'book.epub', {type:'application/epub+zip'}), false, book.id);
+        await loader.loadEpub(new File([saved.file], saved.file.name || 'book.epub', {type:'application/epub+zip'}), { storedId: book.id });
       } catch { addNotification({message:'Could not open saved book', type:'error'}); }
     };
     const loader = useBookLoader({
@@ -157,13 +184,13 @@ export default {
       persistReadingPosition: readingPosition.persistReadingPosition,
       refs: {
         isLoadingBook, loadingTitle, loadingMessage,
-        loadingSubtitle, showLoadingProgress, currentEpubUrl,
+        loadingSubtitle, showLoadingProgress, downloadableBook, currentEpubUrl,
         currentBookKey, chapters, tableOfContents,
-        currentChapter, spineItems
+        currentChapter, spineItems, onlineLoadError
       },
       addNotification,
       resetReaderState,
-      createTrackedObjectUrl,
+      registerObjectUrl,
       restoreReadingPosition: readingPosition.restoreReadingPosition
     });
 
@@ -179,6 +206,11 @@ export default {
 
     const toggleSidebar = () => {
       sidebarOpen.value = !sidebarOpen.value;
+      if (sidebarOpen.value) bookshelfOpen.value = false;
+    };
+
+    const toggleSettings = () => {
+      settingsOpen.value = !settingsOpen.value;
     };
 
     const handleCloseBook = () => {
@@ -188,10 +220,18 @@ export default {
       bookshelfOpen.value = true;
       refreshShelf();
       currentEpubUrl.value = null;
+      onlineLoadError.value = '';
       sidebarOpen.value = false;
       
       const homeUrl = `${window.location.pathname}${window.location.hash || ''}`;
       window.history.replaceState({}, '', homeUrl);
+    };
+
+    const onBookDeleted = id => {
+      if (currentBookKey.value === id) {
+        currentBookKey.value = null;
+        handleCloseBook();
+      } else refreshShelf();
     };
 
     const zoomIn = () => {
@@ -218,24 +258,65 @@ export default {
       }
     };
 
+    const canRecoverDownload = computed(() => {
+      const params = new URLSearchParams(window.location.search);
+      return !isBookLoaded.value && !!onlineLoadError.value && !!currentEpubUrl.value &&
+        params.get('source') === 'https-intercept' && params.get('file') === currentEpubUrl.value;
+    });
+
     const downloadEpub = async () => {
-      if (!currentEpubUrl.value) {
-        addNotification({ message: 'No EPUB URL available for download', type: 'error' });
-        return;
-      }
+      if (downloadPending.value) return;
+      const url = currentEpubUrl.value;
+      const book = downloadableBook.value;
+      if (!book && !canRecoverDownload.value) return;
+
+      downloadPending.value = true;
+      downloadDelayed.value = false;
+      // Do not animate the normal, near-instant browser handoff.
+      downloadDelayTimer = setTimeout(() => {
+        if (downloadPending.value) downloadDelayed.value = true;
+      }, 3000);
       try {
-        addNotification({ message: 'Downloading EPUB...', type: 'info' });
-        await downloadEpubFile(currentEpubUrl.value);
-        addNotification({ message: 'EPUB downloaded successfully!', type: 'success' });
+        const result = book ? await saveOpenBook(book) : await downloadOriginalSource(url);
+        if (result.status === 'waiting') {
+          addNotification({
+            message: 'The browser accepted the download but is still waiting for data. Check Downloads for its status.',
+            type: 'info',
+            timeout: 9000,
+          });
+        } else {
+          addNotification({
+            message: result.status === 'requested' ? 'Request handed to the browser.' : 'Download started in your browser.',
+            type: 'success',
+          });
+        }
       } catch (error) {
-        console.error('Error downloading EPUB:', error);
-        addNotification({ message: 'Failed to download EPUB file', type: 'error' });
+        console.error('Browser EPUB download failed:', error);
+        addNotification({
+          message: `EPUB download failed: ${error?.message || 'network error'}`,
+          type: 'error',
+          timeout: 8000,
+        });
+      } finally {
+        clearTimeout(downloadDelayTimer);
+        downloadDelayTimer = null;
+        downloadPending.value = false;
+        downloadDelayed.value = false;
       }
     };
 
     // Include legacy library overlays as well as native/accessible dialogs.
-    const shortcutsBlocked = () => settingsOpen.value || isLoadingBook.value
-      || !!document.querySelector('dialog[open], [role="dialog"], [role="alertdialog"], .dialog-overlay');
+    const shortcutsBlocked = binding => {
+      // Esc must never dismiss reader panels; it only exits fullscreen.
+      if (binding?.action === 'exitFullscreen') return false;
+      if (isLoadingBook.value) return true;
+      // Repeating Ctrl+F9 must work from inside the settings dialog.
+      if (settingsOpen.value) return binding?.action !== 'openSettings';
+      // Nested collection dialogs still protect their form shortcuts.
+      return !!document.querySelector(
+        'dialog[open], [role="dialog"], [role="alertdialog"], .dialog-overlay'
+      );
+    };
     const canAdjustBook = () => isBookLoaded.value && !bookshelfOpen.value;
     const adjustFont = direction => {
       const { min, max, step } = readerLimits.fontSize;
@@ -248,9 +329,20 @@ export default {
         return [document, ...roots].some(root => root?.getSelection?.()?.toString().length > 0);
       },
       actions: {
-        openSettings: { enabled: canAdjustBook, run: () => { settingsOpen.value = true; } },
-        openToc: { enabled: () => isBookLoaded.value, run: () => { bookshelfOpen.value = false; sidebarOpen.value = true; } },
-        openLibrary: { run: () => { bookshelfOpen.value = true; sidebarOpen.value = false; refreshShelf(); } },
+        openSettings: {
+          enabled: () => isBookLoaded.value && !bookshelfOpen.value,
+          allowWhenTyping: () => settingsOpen.value,
+          run: toggleSettings
+        },
+        openToc: {
+          enabled: () => isBookLoaded.value,
+          allowWhenTyping: () => sidebarOpen.value,
+          run: toggleSidebar
+        },
+        openLibrary: {
+          allowWhenTyping: () => bookshelfOpen.value,
+          run: toggleBookshelf
+        },
         openBook: { enabled: () => !!headerToolbar.value, run: () => headerToolbar.value.openFilePicker() },
         closeBook: { enabled: () => isBookLoaded.value, run: handleCloseBook },
         zoomOut: { enabled: canAdjustBook, run: zoomOut },
@@ -259,7 +351,11 @@ export default {
         fontSmaller: { enabled: canAdjustBook, run: () => adjustFont(-1) },
         fontLarger: { enabled: canAdjustBook, run: () => adjustFont(1) },
         resetFont: { enabled: canAdjustBook, run: () => { fontSize.value = readerDefaults.fontSize; } },
-        closeToc: { enabled: () => sidebarOpen.value && !bookshelfOpen.value, run: () => { sidebarOpen.value = false; } },
+        exitFullscreen: {
+          enabled: () => !!document.fullscreenElement,
+          allowWhenTyping: true,
+          run: () => document.exitFullscreen()
+        },
       },
     });
 
@@ -289,6 +385,7 @@ export default {
       }
     };
 
+    const stopObservingDownloads = observeOnlineBookDownloads((globalThis.browser ?? globalThis.chrome)?.downloads);
     onMounted(() => {
       document.addEventListener('keyup', handleKeyUp);
       window.addEventListener('touchstart', handleTouchStart, { passive: true });
@@ -299,20 +396,25 @@ export default {
       settingsReady.then(() => loader.loadBookFromUrl());
     });
     onUnmounted(() => {
+      stopObservingDownloads();
       document.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('touchstart', handleTouchStart);
       window.removeEventListener('touchend', handleTouchEnd);
       readingPosition.dispose();
+      clearTimeout(downloadDelayTimer);
       cleanupObjectUrls();
     });
 
     return {
       headerToolbar,
-      bookshelfOpen, shelfBooks, toggleBookshelf, openShelfBook, refreshShelf,
+      bookshelfOpen, shelfBooks, toggleBookshelf, toggleSettings, openShelfBook, refreshShelf, onBookDeleted,
       sidebarOpen, currentPage, totalPages,
       settingsOpen, fontWeight, fontFamily, showInlineControls, currentChapterTitle,
       zoomLevel, fontSize, bookContent, tableOfContents,
-      currentChapter, chapters, currentEpubUrl,
+      currentChapter, chapters, currentEpubUrl, onlineLoadError,
+      downloadableBook, canRecoverDownload,
+      retryOnlineBook: loader.loadBookFromUrl,
+      isTrustedObjectUrl,
       isLoadingBook, loadingTitle, loadingMessage,
       loadingSubtitle, showLoadingProgress,
       loadingProgress, isBookLoaded, toggleSidebar,
@@ -327,7 +429,7 @@ export default {
       handleDragEnter: interactions.handleDragEnter,
       handleDragLeave: interactions.handleDragLeave,
       handleDrop: interactions.handleDrop,
-      toggleFullscreen, downloadEpub, isDragging, spineItems
+      toggleFullscreen, downloadEpub, downloadPending, downloadDelayed, isDragging, spineItems
     };
   }
 };
@@ -340,6 +442,49 @@ export default {
   height: 100%;
   width: 100%;
   overflow: hidden;
+}
+
+
+.online-load-recovery {
+  position: absolute;
+  z-index: 45;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-sizing: border-box;
+  width: min(430px, calc(100% - 24px));
+  padding: 16px;
+  border: 1px solid var(--border-color, #d1d5db);
+  border-radius: 10px;
+  background: var(--toolbar-bg-color, #fff);
+  color: var(--text-color, #242424);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+
+.online-load-recovery p {
+  margin: 8px 0 14px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.online-load-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.online-load-actions button {
+  border: 1px solid var(--hover-outline-color, #10b981);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.online-load-actions button:disabled {
+  opacity: 0.5;
+  cursor: progress;
 }
 
 .main-content {

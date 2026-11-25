@@ -231,7 +231,7 @@
           </div>
           <div class="dialog-body">
             <p class="delete-confirmation-text">
-              Are you sure you want to remove <strong>{{ bookToDelete?.title }}</strong> from your library?
+              Are you sure you want to remove <strong>{{ bookToDelete?.title }}</strong> from your library and delete its saved copy and reading position?
             </p>
           </div>
           <div class="dialog-footer">
@@ -250,8 +250,8 @@
 
 <script>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import useCollections from '../../../composables/useCollections';
-import useBookStorage from '../../../composables/useBookStorage';
+import useCollections, { COLLECTIONS_KEY, COLLECTIONS_CHANGED } from '../../../composables/useCollections';
+import { removeLibraryBook } from '../../../services/library/bookData.js';
 
 export default {
   props: {
@@ -274,8 +274,16 @@ export default {
     const bookToDelete = ref(null);
     
     const { getCollections, createCollection, addBookToCollection, removeBookFromCollection } = useCollections();
-    const { deleteBook } = useBookStorage();
     const collections = ref(getCollections());
+
+    const refreshCollections = () => {
+      collections.value = getCollections();
+      selectedCollection.value = collections.value.find(c => c.id === selectedCollection.value?.id)
+        ?? collections.value.find(c => c.id === 'all');
+    };
+    const onStorage = event => {
+      if (event.key === COLLECTIONS_KEY) refreshCollections();
+    };
 
     // Check screen size
     const checkMobile = () => {
@@ -289,6 +297,8 @@ export default {
     };
 
     onMounted(() => {
+      window.addEventListener(COLLECTIONS_CHANGED, refreshCollections);
+      window.addEventListener('storage', onStorage);
       checkMobile();
       window.addEventListener('resize', checkMobile);
       // Select "All Books" collection by default
@@ -296,6 +306,8 @@ export default {
     });
 
     onUnmounted(() => {
+      window.removeEventListener(COLLECTIONS_CHANGED, refreshCollections);
+      window.removeEventListener('storage', onStorage);
       window.removeEventListener('resize', checkMobile);
     });
 
@@ -368,7 +380,6 @@ export default {
     const handleCreateCollection = () => {
       if (newCollectionName.value.trim()) {
         const newCollection = createCollection(newCollectionName.value.trim());
-        collections.value.push(newCollection);
         newCollectionName.value = '';
         showNewCollectionDialog.value = false;
         // Optionally select the new collection
@@ -415,20 +426,12 @@ export default {
       if (!bookToDelete.value) return;
       
       try {
-        await deleteBook(bookToDelete.value.id);
-        
-        // Remove from all collections
-        collections.value.forEach(collection => {
-          if (collection.bookIds?.includes(bookToDelete.value.id)) {
-            removeBookFromCollection(collection.id, bookToDelete.value.id);
-          }
-        });
-        
-        // Refresh collections
+        const book = bookToDelete.value;
+        await removeLibraryBook(book);
         collections.value = getCollections();
         
         // Emit event to parent to update book list
-        emit('book-deleted', bookToDelete.value.id);
+        emit('book-deleted', book.id);
         
         showDeleteDialog.value = false;
         bookToDelete.value = null;
@@ -453,25 +456,6 @@ export default {
       if (diffDays < 7) return `${diffDays}d ago`;
       return d.toLocaleDateString();
     };
-
-    // Close on ESC key
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        if (showCollections.value && isMobile.value) {
-          showCollections.value = false;
-        } else if (props.isOpen) {
-          handleClose();
-        }
-      }
-    };
-
-    watch(() => props.isOpen, (isOpen) => {
-      if (isOpen) {
-        document.addEventListener('keydown', handleKeyDown);
-      } else {
-        document.removeEventListener('keydown', handleKeyDown);
-      }
-    });
 
     watch(showNewCollectionDialog, (isOpen) => {
       if (isOpen) {

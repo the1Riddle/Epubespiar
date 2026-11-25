@@ -120,30 +120,45 @@ export default function useBookStorage() {
     }
   };
 
+  /**
+   * Read only bookshelf display metadata. Do not keep the saved EPUB File in
+   * Vue's reactive bookshelf array; full book bytes are loaded by getBook(id)
+   * only when the user actually opens a book.
+   *
+   * A cursor avoids structured-cloning the entire collection of book binaries
+   * at once, which is costly for a large offline library.
+   */
   const getAllBooks = async () => {
+    const db = await openDatabase();
     try {
-      const db = await openDatabase();
       const transaction = db.transaction([STORE_NAME], "readonly");
-      transaction.onabort = () =>
-        console.error("Book transaction aborted", transaction.error);
       const store = transaction.objectStore(STORE_NAME);
+      const books = [];
+      return await new Promise((resolve, reject) => {
+        const cursorRequest = store.openCursor();
 
-      return new Promise((resolve, reject) => {
-        const request = store.getAll();
-
-        request.onsuccess = () => {
-          const books = request.result || [];
-          books.sort((a, b) => new Date(b.lastOpened) - new Date(a.lastOpened));
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result;
+          if (cursor) {
+            const { file, ...metadata } = cursor.value;
+            books.push(metadata);
+            cursor.continue();
+          }
+        };
+        cursorRequest.onerror = () =>
+          reject(new Error("Failed to read bookshelf"));
+        transaction.oncomplete = () => {
+          books.sort(
+            (a, b) =>
+              new Date(b.lastOpened || 0) - new Date(a.lastOpened || 0)
+          );
           resolve(books);
         };
-
-        transaction.onabort = transaction.onerror = () => {
-          reject(new Error("Failed to get books"));
-        };
+        transaction.onabort = transaction.onerror = () =>
+          reject(new Error("Failed to list books"));
       });
-    } catch (error) {
-      console.error("Error getting all books:", error);
-      throw error;
+    } finally {
+      db.close();
     }
   };
 
@@ -185,6 +200,19 @@ export default function useBookStorage() {
     } catch (error) {
       console.error("Error updating book:", error);
       throw error;
+    }
+  };
+
+  const hasBook = async (bookId) => {
+    const db = await openDatabase();
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = db.transaction(STORE_NAME).objectStore(STORE_NAME).getKey(bookId);
+        request.onsuccess = () => resolve(request.result !== undefined);
+        request.onerror = () => reject(request.error);
+      });
+    } finally {
+      db.close();
     }
   };
 
@@ -243,6 +271,7 @@ export default function useBookStorage() {
     getBook,
     getAllBooks,
     updateBook,
+    hasBook,
     deleteBook,
     clearAllBooks,
   };

@@ -1,7 +1,8 @@
 import JSZip from "jszip";
+import { assertArchiveWithinLimits } from "./archiveLimits.js";
 import { parseAndProcessChapter } from "./processChapter.js";
 import { parseTableOfContents } from "./parseTableOfContents.js";
-import { resolvePath } from "./pathUtils.js";
+import { resolvePath, resolveArchivePath } from "./pathUtils.js";
 
 const MIN_TOC_SIZE_THRESHOLD = 3;
 const MIN_SPINE_SIZE_FOR_FALLBACK = 5;
@@ -14,6 +15,9 @@ const parseOpfPath = (containerXml) => {
 
 export async function parseEpubArchive(file, createTrackedObjectUrl) {
   const arrayBuffer = await file.arrayBuffer();
+  // Read standard central-directory sizes before extraction: JSZip's private
+  // _data fields are not stable across versions or EPUB producer variants.
+  assertArchiveWithinLimits(arrayBuffer);
   const zip = await JSZip.loadAsync(arrayBuffer);
 
   const containerContent = await zip
@@ -99,11 +103,11 @@ export async function parseEpubArchive(file, createTrackedObjectUrl) {
         createTrackedObjectUrl,
       );
       const doc = new DOMParser().parseFromString(content, "text/html");
-      const stylesHtml = Array.from(
-        doc.querySelectorAll('style, link[rel="stylesheet"]'),
-      )
-        .map((style) => style.outerHTML)
-        .join("");
+      const styles = Array.from(doc.querySelectorAll("style"), node => {
+        const sheet = { css: node.textContent, media: node.media };
+        node.remove();
+        return sheet;
+      });
       const bodyNode = doc.querySelector("body");
       const bodyHtml = bodyNode ? bodyNode.innerHTML : content;
       const chapterFileName = spineItem.href.split("/").pop() || spineItem.href;
@@ -115,7 +119,7 @@ export async function parseEpubArchive(file, createTrackedObjectUrl) {
         href: spineItem.href,
         title: matchingToc?.label || `Section ${index + 1}`,
         content,
-        styles: stylesHtml,
+        styles,
         body: bodyHtml,
       });
     } catch (error) {
@@ -149,7 +153,7 @@ export async function parseEpubArchive(file, createTrackedObjectUrl) {
     ...manifestItems.filter((item) => item.mediaType.startsWith("image/")),
   ].filter(Boolean);
   for (const item of candidates) {
-    const entry = zip.file(resolvePath(opfBasePath, item.href));
+    const entry = zip.file(resolveArchivePath(opfBasePath, item.href, zip.files));
     if (!entry) continue;
     cover =
       "data:" + item.mediaType + ";base64," + (await entry.async("base64"));

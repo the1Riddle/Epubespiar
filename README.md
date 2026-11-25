@@ -92,7 +92,7 @@ When content scripts cannot run (for example `chrome://newtab`) or when browser 
 
 - `src/background/index.js` listens on `browser.downloads.onCreated` and `browser.downloads.onChanged`.
 - It detects EPUB candidates using URL, filename, or MIME type (`application/epub+zip`).
-- **Local file EPUBs (`file://...`)**: it cancels and erases the download, then opens the reader with the original `file://` URL.
+- **Local file EPUBs (`file://...`)**: Chromium may route the local file to the reader when access is allowed. Firefox extension pages cannot currently fetch these URLs, so Epubespiar does **not** cancel the original local-file operation on Firefox.
 - **HTTPS downloads**: interception is only enabled when `storage.local.interceptDownloads === true`.
 
 This is **not** a hidden `chrome://newtab` file-drop API. It relies on normal Chrome navigation/download behavior plus the extension's Downloads API listeners.
@@ -121,8 +121,12 @@ Both paths end by opening the extension reader with:
 
 ## Browser Compatibility
 
+The reader requires Chromium 146+ (including Chrome and Edge) or Firefox 148+ for native EPUB chapter sanitization.
+
+For Firefox local-file restrictions, supported fallbacks, and the Mozilla upstream issues, see [Firefox local-file support](docs/FIREFOX_LOCAL_FILES.md).
+
 - [Chrome](https://chromewebstore.google.com/detail/epubespiar/jpebliijmpohifmgjcpfmhfjjeingoho)/[Edge](https://microsoftedge.microsoft.com/addons/detail/mnlangghpjdaaecdfagjleijiahpaaei?hl=vi): Full support
-- [Firefox](https://addons.mozilla.org/en-GB/firefox/addon/epubespiar/): Full support
+- [Firefox](https://addons.mozilla.org/en-GB/firefox/addon/epubespiar/): EPUB reading, file picker, reader-page drag/drop, and HTTPS integration supported; automatic loading of local `file://` EPUBs remains restricted by Firefox ([details](docs/FIREFOX_LOCAL_FILES.md)).
 - Other Chromium-based browsers: Should work with the Chrome build
 
 ## What's not implemented

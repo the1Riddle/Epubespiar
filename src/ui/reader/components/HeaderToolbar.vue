@@ -85,8 +85,20 @@
           </button>
           
           <!-- Show these buttons only when a book is loaded -->
-          <button v-if="showDownloadButton" @click="handleDownload" title="Download EPUB" aria-label="Download EPUB file">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+          <button
+            v-if="canDownload"
+            @click="handleDownload"
+            class="download-book-button"
+            :class="{ 'download-book-button--waiting': downloadDelayed }"
+            :disabled="downloadPending"
+            :aria-busy="downloadPending"
+            :title="downloadDelayed ? 'Waiting for the browser to receive download data…' : 'Download EPUB'"
+            :aria-label="downloadDelayed ? 'Waiting for EPUB download to start' : 'Download EPUB file'"
+          >
+            <svg
+              :class="{ 'download-arrow--waiting': downloadDelayed }"
+              xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+              fill="currentColor" viewBox="0 0 16 16">
               <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>
               <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/>
             </svg>
@@ -116,12 +128,14 @@ export default {
   props: {
     currentPage: { type: Number, default: 1 },
     totalPages: { type: Number, default: 0 },
+    canDownload: { type: Boolean, default: false },
     isBookLoaded: { type: Boolean, default: false },
     fontSize: { type: Number, default: 16 },
     zoomLevel: { type: Number, default: 1 },
     currentChapterTitle: { type: String, default: '' },
     showInlineControls: { type: Boolean, default: true },
-    epubUrl: { type: String, default: null }
+    downloadPending: { type: Boolean, default: false },
+    downloadDelayed: { type: Boolean, default: false }
   },
   emits: [
     'toggle-bookshelf',
@@ -144,11 +158,6 @@ export default {
     const searchResults = ref([]);
     const searchInput = ref(null);
     
-
-    // Check if download button should be shown (book loaded from HTTPS)
-    const showDownloadButton = computed(() => {
-      return props.isBookLoaded && props.epubUrl && props.epubUrl.startsWith('https://');
-    });
 
     // Reflect current zoom in dropdown using nearest preset value
     const zoomSelectValue = computed(() => {
@@ -233,7 +242,7 @@ export default {
 
     return {
       fileInput, searchOpen, searchQuery, searchResults, searchInput,
-      zoomSelectValue, showDownloadButton,
+      zoomSelectValue,
       onZoomChange, onFontSizeChange, triggerFileInput, onFileSelected,
       toggleSearch, toggleFullscreen, handleDownload, performSearch, goToSearchResult
     };
@@ -474,6 +483,44 @@ export default {
     .middle-toolbar > button,
     .middle-toolbar > select {
       display: none;
+    }
+  }
+
+  .download-book-button:disabled {
+    cursor: progress;
+    opacity: 0.85;
+  }
+
+  /* Only shown after three seconds without download bytes arriving. */
+  .download-arrow--waiting {
+    animation: download-arrow-bounce 0.85s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  .download-book-button--waiting::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1px solid var(--hover-outline-color, currentColor);
+    border-radius: 6px;
+    animation: download-pulse 1.4s ease-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes download-arrow-bounce {
+    0%, 100% { transform: translateY(-1px); }
+    50% { transform: translateY(3px); }
+  }
+
+  @keyframes download-pulse {
+    0% { opacity: 0.65; transform: scale(0.94); }
+    100% { opacity: 0; transform: scale(1.16); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .download-arrow--waiting,
+    .download-book-button--waiting::after {
+      animation: none;
     }
   }
 
